@@ -141,12 +141,17 @@ function App({ userEmail, onLogout }){
 
   /* Load saved voice + session on mount */
   useEffect(()=>{if(!userEmail)return;(async()=>{
-    const{data:voice}=await sb.from("brand_voices").select("*").eq("email",userEmail).single();
-    if(voice)setVp({summary:voice.summary,traits:voice.traits,sentenceStyle:voice.sentence_style,vocabulary:voice.vocabulary,personality:voice.personality,avoids:voice.avoids});
-    const{data:sess}=await sb.from("sessions").select("*").eq("email",userEmail).single();
-    if(sess){if(sess.form_data)setForm(f=>({...f,...sess.form_data}));if(sess.current_step)setStep(sess.current_step);if(sess.results)setResults(sess.results);}
-    const{data:logs}=await sb.from("generation_log").select("id").eq("email",userEmail).gte("created_at",new Date(new Date().toISOString().slice(0,10)).toISOString());
-    setRemaining(Math.max(0,3-(logs?.length||0)));
+    try{
+      const{data:voices}=await sb.from("brand_voices").select("*").eq("email",userEmail).limit(1);
+      const voice=voices?.[0];
+      if(voice)setVp({summary:voice.summary,traits:voice.traits,sentenceStyle:voice.sentence_style,vocabulary:voice.vocabulary,personality:voice.personality,avoids:voice.avoids});
+      const{data:sessions}=await sb.from("sessions").select("*").eq("email",userEmail).limit(1);
+      const sess=sessions?.[0];
+      if(sess){if(sess.form_data)setForm(f=>({...f,...sess.form_data}));if(sess.current_step)setStep(sess.current_step);if(sess.results)setResults(sess.results);}
+      const todayStart=new Date(new Date().toISOString().slice(0,10)).toISOString();
+      const{data:logs}=await sb.from("generation_log").select("id").eq("email",userEmail).gte("created_at",todayStart);
+      setRemaining(Math.max(0,3-(logs?.length||0)));
+    }catch(e){console.error("Load error:",e);}
     setDataLoaded(true);
   })();},[userEmail]);
 
@@ -169,7 +174,7 @@ function App({ userEmail, onLogout }){
   /* ═══ EDGE FUNCTION HELPERS ═══ */
   const callEdge=async(fnName,body)=>{
     if(!userEmail)throw new Error("Not logged in");
-    const r=await fetch(`${SUPABASE_URL}/functions/v1/${fnName}`,{method:"POST",headers:{"Content-Type":"application/json","x-user-email":userEmail},body:JSON.stringify({...body,email:userEmail})});
+    const r=await fetch(`${SUPABASE_URL}/functions/v1/${fnName}`,{method:"POST",headers:{"Content-Type":"application/json","apikey":SUPABASE_ANON_KEY,"Authorization":`Bearer ${SUPABASE_ANON_KEY}`,"x-user-email":userEmail},body:JSON.stringify({...body,email:userEmail})});
     const d=await r.json();
     if(!r.ok)throw new Error(d.error||`Error ${r.status}`);
     return d;
