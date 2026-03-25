@@ -137,7 +137,7 @@ function CopyBlock({tag,text,limits}){
 
 /* ═══ MAIN ═══ */
 function App({ userEmail, onLogout }){
-  const[step,setStep]=useState(0);const[form,setForm]=useState(INIT);const[loading,setLoading]=useState(false);const[results,setResults]=useState(null);const[activeTab,setActiveTab]=useState(0);const[error,setError]=useState(null);const[vp,setVp]=useState(null);const[vL,setVL]=useState(false);const[vE,setVE]=useState(null);const[showScores,setShowScores]=useState(false);const[confirmReset,setConfirmReset]=useState(false);const[loadingSec,setLoadingSec]=useState(0);const[remaining,setRemaining]=useState(3);const[dataLoaded,setDataLoaded]=useState(false);const[isReturning,setIsReturning]=useState(false);const loadingTimer=useRef(null);const topRef=useRef(null);
+  const[view,setView]=useState("loading");const[step,setStep]=useState(0);const[form,setForm]=useState(INIT);const[loading,setLoading]=useState(false);const[results,setResults]=useState(null);const[activeTab,setActiveTab]=useState(0);const[error,setError]=useState(null);const[vp,setVp]=useState(null);const[vL,setVL]=useState(false);const[vE,setVE]=useState(null);const[showScores,setShowScores]=useState(false);const[loadingSec,setLoadingSec]=useState(0);const[dataLoaded,setDataLoaded]=useState(false);const loadingTimer=useRef(null);const topRef=useRef(null);
 
   /* Load saved voice + session on mount */
   useEffect(()=>{if(!userEmail)return;(async()=>{
@@ -147,18 +147,16 @@ function App({ userEmail, onLogout }){
       if(voice)setVp({summary:voice.summary,traits:voice.traits,sentenceStyle:voice.sentence_style,vocabulary:voice.vocabulary,personality:voice.personality,avoids:voice.avoids});
       const{data:sessions}=await sb.from("sessions").select("*").eq("email",userEmail).limit(1);
       const sess=sessions?.[0];
-      if(sess){if(sess.form_data)setForm(f=>({...f,...sess.form_data}));if(sess.results){setResults(sess.results);setStep(5);setIsReturning(true);}else if(sess.current_step){setStep(sess.current_step);}}
-      const todayStart=new Date(new Date().toISOString().slice(0,10)).toISOString();
-      const{data:logs}=await sb.from("generation_log").select("id").eq("email",userEmail).gte("created_at",todayStart);
-      setRemaining(Math.max(0,3-(logs?.length||0)));
-    }catch(e){console.error("Load error:",e);}
+      if(sess&&sess.results){setResults(sess.results);if(sess.form_data)setForm(f=>({...f,...sess.form_data}));setView("dashboard");}
+      else{if(sess&&sess.form_data)setForm(f=>({...f,...sess.form_data}));if(sess&&sess.current_step)setStep(sess.current_step);setView("wizard");}
+    }catch(e){console.error("Load error:",e);setView("wizard");}
     setDataLoaded(true);
   })();},[userEmail]);
 
-  /* Auto-save form + step to session */
+  /* Auto-save form + step */
   const saveTimer=useRef(null);
-  useEffect(()=>{if(!userEmail||!dataLoaded)return;clearTimeout(saveTimer.current);saveTimer.current=setTimeout(()=>{sb.from("sessions").upsert({email:userEmail,form_data:form,current_step:step,results:results,updated_at:new Date().toISOString()},{onConflict:"email"});},1500);},[form,step,results,dataLoaded]);
-  useEffect(()=>{topRef.current?.scrollIntoView({behavior:"smooth",block:"start"})},[step,results]);
+  useEffect(()=>{if(!userEmail||!dataLoaded||view!=="wizard")return;clearTimeout(saveTimer.current);saveTimer.current=setTimeout(()=>{sb.from("sessions").upsert({email:userEmail,form_data:form,current_step:step,updated_at:new Date().toISOString()},{onConflict:"email"});},1500);},[form,step,dataLoaded]);
+  useEffect(()=>{topRef.current?.scrollIntoView({behavior:"smooth",block:"start"})},[step,view]);
   useEffect(()=>{if(loading){setLoadingSec(0);loadingTimer.current=setInterval(()=>setLoadingSec(s=>s+1),1000);return()=>clearInterval(loadingTimer.current);}else{clearInterval(loadingTimer.current);}},[loading]);
   const set=k=>e=>setForm({...form,[k]:typeof e==="string"?e:e.target.value});
 
@@ -191,9 +189,9 @@ function App({ userEmail, onLogout }){
   /* Voice */
   const analyzeVoice=async(text)=>{if(!text||text.trim().length<50){setVE("We need at least a few sentences to get a feel for your voice. Paste a little more and try again!");return;}setVL(true);setVE(null);setVp(null);try{const d=await callEdge("analyze-voice",{writingSample:text});setVp(d.voice);}catch(e){setVE(friendlyError(e));}finally{setVL(false);}};
 
-  /* Generate */
-  const generate=async()=>{setLoading(true);setError(null);setResults(null);setActiveTab(0);setShowScores(false);
-    try{const d=await callEdge("generate-ads",{form,voiceProfile:vp,mode:"generate_all"});if(!d.results?.variations||d.results.variations.length===0)throw new Error("no results");setResults(d.results);setStep(5);if(typeof d.remaining==="number")setRemaining(d.remaining);}catch(e){console.error(e);setError(friendlyError(e));}finally{setLoading(false);}};;
+  /* Generate — when done, go to dashboard */
+  const generate=async()=>{setLoading(true);setError(null);setActiveTab(0);setShowScores(false);
+    try{const d=await callEdge("generate-ads",{form,voiceProfile:vp,mode:"generate_all"});if(!d.results?.variations||d.results.variations.length===0)throw new Error("no results");setResults(d.results);setView("dashboard");}catch(e){console.error(e);setError(friendlyError(e));}finally{setLoading(false);}};
 
   /* Export */
   const exportCopy=()=>{if(!results)return;let t=`ADS MADE SIMPLE · Ad Copy Export\n${"═".repeat(45)}\nGenerated: ${new Date().toLocaleDateString()}\n`;if(form.businessName)t+=`Business: ${form.businessName}\n`;t+=`Offer: ${form.leadMagnetName}\n`;if(vp)t+=`Voice: ${vp.personality}\n`;t+=`\n`;results.variations.forEach((v,i)=>{const s=results.scores?.[i];t+=`${"-".repeat(45)}\n${v.label.toUpperCase()}${s?` (Score: ${s.overall}/10)`:""}\n${"-".repeat(45)}\n\n`;t+=`PRIMARY TEXT:\n${v.primaryText}\n\nHEADLINE: ${v.headline}\nDESCRIPTION: ${v.description}\nCTA BUTTON: ${v.ctaButton}\n`;if(s)t+=`\nTip: ${s.topTip}\n`;t+=`\n`;});t+=`\n${"═".repeat(45)}\nBuilt with Ads Made Simple by Whitney Bateson Digital Strategy\n`;const blob=new Blob([t],{type:"text/plain"});const u=URL.createObjectURL(blob);const a=document.createElement("a");a.href=u;a.download="ad-copy-export.txt";a.click();URL.revokeObjectURL(u);};
@@ -201,17 +199,11 @@ function App({ userEmail, onLogout }){
   const[copiedFull,setCopiedFull]=useState(-1);
   const handleCopyFull=(i)=>{copyFullAd(results.variations[i]);setCopiedFull(i);setTimeout(()=>setCopiedFull(-1),2e3);};
 
-  /* Regenerate single variation */
-  const[regenIdx,setRegenIdx]=useState(-1);
-  const regenerateOne=async(idx)=>{setRegenIdx(idx);
-    try{const d=await callEdge("generate-ads",{form,voiceProfile:vp,mode:"regenerate_one",existingVariations:results.variations,regenIdx:idx});const parsed=d.results;const newVars=[...results.variations];newVars[idx]={label:parsed.label,primaryText:parsed.primaryText,headline:parsed.headline,description:parsed.description,ctaButton:parsed.ctaButton};const newScores=[...(results.scores||[])];if(parsed.score)newScores[idx]=parsed.score;setResults({...results,variations:newVars,scores:newScores});}catch(e){console.error(e);setError(friendlyError(e));}finally{setRegenIdx(-1);}};
-
-  const startOver=()=>{if(!confirmReset){setConfirmReset(true);return;}setStep(0);setForm(INIT);setResults(null);setError(null);setVE(null);setShowScores(false);setConfirmReset(false);setIsReturning(false);if(userEmail)sb.from("sessions").upsert({email:userEmail,form_data:INIT,current_step:0,results:null,updated_at:new Date().toISOString()},{onConflict:"email"});};
-  useEffect(()=>{if(confirmReset){const t=setTimeout(()=>setConfirmReset(false),4000);return()=>clearTimeout(t);}},[confirmReset]);
-
   const voiceBadge=()=>vp?<div className="voice-badge">✅ Voice matched: <em>{vp.personality}</em></div>:null;
 
   /* ═══ RENDER ═══ */
+  if(view==="loading")return <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:F.b,color:C.teal}}>Loading your dashboard...</div>;
+
   return <div ref={topRef} className="app">
     <style>{`
       @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;0,800;0,900;1,700&family=Source+Sans+3:wght@400;500;600;700&family=Dancing+Script:wght@700&display=swap');
@@ -303,6 +295,11 @@ function App({ userEmail, onLogout }){
       .score-toggle{width:100%;display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-radius:14px;border:1.5px solid ${C.tealMid};background:${C.white};cursor:pointer;font-family:${F.b};margin-top:20px;transition:all .2s}
       .score-detail{background:${C.cream}aa;border:1.5px solid ${C.tealMid};border-top:none;border-radius:0 0 14px 14px;padding:22px;margin-top:-2px}
 
+      /* DASHBOARD HERO */
+      .dash-hero{background:${C.teal};padding:48px 32px;text-align:center}
+      .dash-hero h2{font-family:${F.h};font-size:clamp(26px,4vw,34px);font-weight:900;color:${C.white};margin-bottom:8px}
+      .dash-hero p{font-size:16px;color:${C.ltBlue};opacity:.8;max-width:480px;margin:0 auto}
+
       /* FOOTER */
       .footer{background:${C.teal};padding:40px 32px;text-align:center}
       .footer img{height:24px;opacity:.5;margin-bottom:10px}
@@ -323,110 +320,128 @@ function App({ userEmail, onLogout }){
     `}</style>
 
     {/* NAV */}
-    <div className="nav-wrap"><nav className="nav"><img src={IMG.logoW} alt="Whitney Bateson"/><div style={{display:"flex",alignItems:"center",gap:"14px"}}><span style={{fontSize:"12px",color:C.ltBlue,opacity:.7}}>{remaining}/3 generations left today</span><span className="nav-badge">Ad Copy Generator</span><button onClick={onLogout} style={{background:"transparent",border:`1px solid ${C.ltBlue}44`,color:C.ltBlue,padding:"4px 14px",borderRadius:"20px",fontSize:"12px",cursor:"pointer",fontFamily:F.b,opacity:.7}}>Log out</button></div></nav></div>
+    <div className="nav-wrap"><nav className="nav"><img src={IMG.logoW} alt="Whitney Bateson"/><div style={{display:"flex",alignItems:"center",gap:"14px"}}><span className="nav-badge">Ad Copy Generator</span><button onClick={onLogout} style={{background:"transparent",border:`1px solid ${C.ltBlue}44`,color:C.ltBlue,padding:"4px 14px",borderRadius:"20px",fontSize:"12px",cursor:"pointer",fontFamily:F.b,opacity:.7}}>Log out</button></div></nav></div>
 
-    {/* HERO (Step 0) or INNER HERO (Steps 1-4) */}
-    {step===0&&<div className="hero"><div className="hero-img"/><div className="hero-text">
-      <div className="hero-label">Ads Made Simple</div>
-      <h1>Let's Create Your <span>Facebook Ad Copy</span></h1>
-      <p>Answer a few quick questions and get 3 scroll-stopping ad variations{vp?", written in your voice":""}, scored and ready to launch.</p>
-      <div className="doc-link">
-    </div></div>}
-
-    {step>0&&step<5&&<div className="inner-hero">
-      <div className="section-label">{STEPS[step]?.label}</div>
-      <h2>{STEPS[step]?.title}</h2>
-      <p>{STEPS[step]?.desc}</p>
-      <div className="progress">{STEPS.map((_,i)=><div key={i} style={{background:i<step?C.coral:i===step?C.lime:C.tealMid}}/>)}</div>
-    </div>}
-
-    {/* RESULTS HERO */}
-    {step===5&&<div className="results-hero">
-      <div style={{marginBottom:"16px"}}><div style={{position:"relative",display:"inline-block"}}><img src={IMG.avatar} alt="Whitney" style={{width:"80px",height:"80px",borderRadius:"50%",objectFit:"cover",border:`3px solid ${C.lime}`}}/><span style={{position:"absolute",bottom:"-2px",right:"-6px",fontSize:"24px"}}>{isReturning?"👋":"🎉"}</span></div></div>
-      <h2>{isReturning?"Welcome back!":"Your ads are ready!"}</h2>
-      <p>{isReturning?"Here are the ads we created for you last time. You can copy them, download them, or start a new round.":(vp?`Written in your voice (${vp.personality}). Pick your favorite or test them all!`:"Pick your favorite, tweak it, or A/B test them all!")}</p>
-    </div>}
-
-    {/* STEP CONTENT */}
-    {step===0&&<>
-      <div className="section" style={{background:C.cream}}>
-        <div className="section-inner">
-          <div className="card">
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"16px"}}><div/><button onClick={prefillExample} style={{background:"none",border:"none",color:C.coral,fontSize:"14px",fontWeight:600,cursor:"pointer",fontFamily:F.b,textDecoration:"underline"}}>Try an example to see how it works</button></div>
-            <label className="field">What's your lead magnet or freebie called? <span className="hint">(Or what are you thinking of calling it?)</span></label>
-            <input className="inp" placeholder='e.g. "5 Steps to Map Out Your Services"' value={form.leadMagnetName} onChange={set("leadMagnetName")}/>
-            <label className="field">What kind of freebie is it?</label>
-            <div className="pills">{["PDF / Guide","Workbook","Checklist","Video Training","Quiz","Template","Other"].map(o=><button key={o} className={`pill ${form.leadMagnetType===o?"active":""}`} onClick={()=>set("leadMagnetType")(o)}>{o}</button>)}</div>
-            <label className="field">What does it help someone do?</label>
-            <textarea className="inp" placeholder="e.g. Organize their services so their website is clearer and more clients say yes" value={form.whatItHelps} onChange={set("whatItHelps")}/>
-            <label className="field">Your business name <span className="hint">(totally optional!)</span></label>
-            <input className="inp" placeholder="e.g. Whitney Bateson Digital Strategy" value={form.businessName} onChange={set("businessName")}/>
-          </div>
-        </div>
+    {/* ═══ DASHBOARD VIEW ═══ */}
+    {view==="dashboard"&&<>
+      <div className="dash-hero">
+        <div style={{marginBottom:"14px"}}><div style={{position:"relative",display:"inline-block"}}><img src={IMG.avatar} alt="Whitney" style={{width:"72px",height:"72px",borderRadius:"50%",objectFit:"cover",border:`3px solid ${C.lime}`}}/></div></div>
+        <h2>Your Ad Copy Dashboard</h2>
+        <p>Here's everything we created for you. Copy, download, or review your scores below.</p>
       </div>
-      <div className="section" style={{background:C.white}}>
-        <div className="section-inner">
-          <div className="card-alt">
-            <div style={{display:"flex",alignItems:"center",gap:"10px",marginBottom:"8px"}}><h3 style={{margin:0}}>Your Brand Voice</h3><span className="tag" style={{background:C.pink,fontSize:"10px"}}>Optional</span></div>
-            <p style={{fontSize:"16px",color:C.teal,opacity:.55,marginBottom:"22px",lineHeight:1.6}}>Want your ads to actually sound like <em>you</em>? Paste a sample of your writing and we'll learn your style.</p>
-            <label className="field">Paste something you've written <span className="hint">(a blog post, email, Instagram caption, your About page... anything!)</span></label>
-            <textarea className="inp" style={{minHeight:"120px"}} placeholder={"Drop in a paragraph or two of your writing here.\n\nThe more you share, the better we can match your voice. Even a few sentences work!"} value={form.writingSample} onChange={set("writingSample")}/>
-            <button className="btn-teal btn-sm" disabled={vL||!form.writingSample.trim()} onClick={()=>analyzeVoice(form.writingSample)}>{vL?<span className="spinner" style={{gap:"8px"}}>Analyzing <Spinner/></span>:"🔍 Analyze My Voice"}</button>
-            {vL&&<div style={{display:"flex",alignItems:"center",gap:"10px",background:C.ltBlue+"44",border:`1.5px solid ${C.ltBlue}`,borderRadius:"12px",padding:"14px 18px",fontSize:"15px",color:C.teal,marginTop:"16px"}}><Spinner dark/> Getting to know your writing style...</div>}
-            {vE&&<div className="tip tip-warn">{vE}</div>}
-            {vp&&<div style={{marginTop:"20px"}}><div className="voice-badge">✅ <strong>Got it! Here's what we picked up:</strong></div><div style={{background:C.white,border:`1.5px solid ${C.tealMid}`,borderRadius:"14px",padding:"22px",fontSize:"15px",lineHeight:1.7}}><div style={{fontWeight:700,marginBottom:"8px",fontSize:"16px"}}>{vp.summary}</div><div style={{display:"flex",flexWrap:"wrap",gap:"6px",marginBottom:"12px"}}>{vp.traits?.map((t,i)=><span key={i} style={{background:C.lime+"88",padding:"4px 14px",borderRadius:"14px",fontSize:"13px",fontWeight:600}}>{t}</span>)}</div><div style={{opacity:.65,fontSize:"14px"}}><strong>Personality:</strong> {vp.personality} · <strong>Style:</strong> {vp.sentenceStyle}</div></div><button className="btn-outline" style={{marginTop:"10px",padding:"8px 18px",fontSize:"13px",borderRadius:"8px"}} onClick={()=>{setVp(null);setVE(null)}}>Try Again</button></div>}
-            {!vp&&!vL&&<div className="tip">💡 <strong>No worries if you skip this!</strong> We'll still write great ad copy for you. It just won't be customized to your specific voice.</div>}
-          </div>
-          <div style={{display:"flex",justifyContent:"flex-end",alignItems:"center",gap:"14px",marginTop:"8px"}}>{!step0Valid&&<span style={{fontSize:"13px",color:C.coral,opacity:.7}}>Fill in your {missingFields(0).join(" & ")} to continue</span>}<button className="btn-coral" disabled={!step0Valid} onClick={()=>setStep(1)}>Next →</button></div>
+
+      {/* Brand Voice Card */}
+      {vp&&<div className="section" style={{background:C.white,paddingBottom:"0"}}><div className="section-inner">
+        <div className="card-alt">
+          <div style={{display:"flex",alignItems:"center",gap:"10px",marginBottom:"12px"}}><h3 style={{margin:0}}>🎯 Your Brand Voice</h3></div>
+          <div style={{fontWeight:700,marginBottom:"8px",fontSize:"16px"}}>{vp.summary}</div>
+          <div style={{display:"flex",flexWrap:"wrap",gap:"6px",marginBottom:"12px"}}>{vp.traits?.map((t,i)=><span key={i} style={{background:C.lime+"88",padding:"4px 14px",borderRadius:"14px",fontSize:"13px",fontWeight:600}}>{t}</span>)}</div>
+          <div style={{opacity:.65,fontSize:"14px"}}><strong>Personality:</strong> {vp.personality} · <strong>Style:</strong> {vp.sentenceStyle}</div>
         </div>
-      </div>
+      </div></div>}
+
+      {/* Ad Variations */}
+      {results&&<div className="section" style={{background:C.cream}}><div className="section-inner">
+        <div className="var-tabs">{results.variations.map((v,i)=>{const sc=results.scores?.[i]?.overall;return <button key={i} className={`var-tab ${activeTab===i?"active":""}`} onClick={()=>{setActiveTab(i);setShowScores(false)}}><div>{["A","B","C"][i]}</div>{sc&&<div style={{fontSize:"11px",color:activeTab===i?C.lime:sColor(sc),fontWeight:700,marginTop:"2px"}}>{sc}/10</div>}</button>})}</div>
+        {(()=>{const v=results.variations[activeTab];const s=results.scores?.[activeTab];return <div className="card">
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"18px"}}><div style={{fontFamily:F.h,fontSize:"17px",fontWeight:700,color:C.teal}}>{v.label}</div><button onClick={()=>handleCopyFull(activeTab)} style={{background:copiedFull===activeTab?C.lime:C.teal,color:copiedFull===activeTab?C.teal:C.white,border:"none",padding:"8px 16px",borderRadius:"8px",fontSize:"13px",fontWeight:700,cursor:"pointer",fontFamily:F.b,transition:"all .2s"}}>{copiedFull===activeTab?"✓ Copied!":"📋 Copy Full Ad"}</button></div>
+          <CopyBlock tag="Primary Text" text={v.primaryText} limits={FB_LIM.primaryText}/>
+          <CopyBlock tag="Headline" text={v.headline} limits={FB_LIM.headline}/>
+          <CopyBlock tag="Description" text={v.description} limits={FB_LIM.description}/>
+          <CopyBlock tag="CTA Button" text={v.ctaButton}/>
+          {s&&<><button className="score-toggle" onClick={()=>setShowScores(!showScores)}><div style={{display:"flex",alignItems:"center",gap:"12px"}}><div style={{width:"42px",height:"42px",borderRadius:"50%",background:sColor(s.overall),display:"flex",alignItems:"center",justifyContent:"center",color:C.white,fontWeight:800,fontSize:"16px"}}>{s.overall}</div><div><div style={{fontWeight:700,fontSize:"15px",color:C.teal}}>Ad Score</div><div style={{fontSize:"12px",color:C.teal,opacity:.5}}>Tap to {showScores?"hide":"see"} the full breakdown + tips</div></div></div><span style={{fontSize:"18px",transition:"transform .2s",transform:showScores?"rotate(180deg)":"none"}}>▾</span></button>
+          {showScores&&<div className="score-detail"><ScoreBar label="Hook Strength" score={s.hookStrength}/><ScoreBar label="Clarity" score={s.clarity}/><ScoreBar label="Emotional Pull" score={s.emotionalPull}/><ScoreBar label="CTA Effectiveness" score={s.ctaEffectiveness}/><div style={{marginTop:"14px",background:C.limeSoft,borderRadius:"12px",padding:"16px 18px",fontSize:"15px",lineHeight:1.6}}>💡 <strong>How to make it even better:</strong> {s.topTip}</div></div>}</>}
+        </div>})()}
+        <div style={{display:"flex",justifyContent:"center",marginTop:"8px"}}><button className="btn-teal" onClick={exportCopy}>📄 Download All Copy</button></div>
+        <div className="tip">💡 <strong>Quick tip:</strong> Start by running your top-scoring variation. Give it 3 to 5 days and at least 1,000 impressions, then check your CTR and cost per lead. After that, test the next one.</div>
+      </div></div>}
     </>}
 
-    {step===1&&<div className="section" style={{background:C.cream}}><div className="section-inner">{voiceBadge()}<div className="card">
-      <label className="field">Who are you trying to reach?</label>
-      <input className="inp" placeholder="e.g. Dietitians in private practice who want more clients from their website" value={form.audienceType} onChange={set("audienceType")}/>
-      <label className="field">What's the thing that's frustrating them the most right now?</label>
-      <textarea className="inp" placeholder="e.g. Their website isn't bringing in clients and they have no idea what to change" value={form.biggestPainPoint} onChange={set("biggestPainPoint")}/>
-      <label className="field">And what do they actually want instead?</label>
-      <textarea className="inp" placeholder="e.g. A clear, professional website that makes people want to book with them" value={form.desiredOutcome} onChange={set("desiredOutcome")}/>
-      <div className="tip">💡 <strong>Remember from the training:</strong> The best ads follow this flow: <em>Problem they recognize → Solution they want → Clear benefit.</em> Keep that in mind as you fill this out!</div>
-    </div>{!step1Valid&&<div style={{fontSize:"13px",color:C.coral,opacity:.7,textAlign:"right",marginTop:"6px"}}>Fill in your {missingFields(1).join(", ")} to continue</div>}<div style={{display:"flex",gap:"12px",justifyContent:"flex-end",marginTop:"8px"}}><button className="btn-outline" onClick={()=>setStep(0)}>← Back</button><button className="btn-coral" disabled={!step1Valid} onClick={()=>setStep(2)}>Next →</button></div></div></div>}
+    {/* ═══ WIZARD VIEW ═══ */}
+    {view==="wizard"&&<>
+      {/* HERO (Step 0) or INNER HERO (Steps 1-3) */}
+      {step===0&&<div className="hero"><div className="hero-img"/><div className="hero-text">
+        <div className="hero-label">Ads Made Simple</div>
+        <h1>Let's Create Your <span>Facebook Ad Copy</span></h1>
+        <p>Answer a few quick questions and get 3 scroll-stopping ad variations{vp?", written in your voice":""}, scored and ready to launch.</p>
+        <div className="doc-link">Prefer to work in a doc? Grab the <a href="#">Google Doc version here</a> and fill it out at your own pace.</div>
+      </div></div>}
 
-    {step===2&&<><div className="section" style={{background:C.cream}}><div className="section-inner"><div className="card"><h3>Pick a Hook Formula</h3><p style={{fontSize:"15px",opacity:.5,marginBottom:"18px",lineHeight:1.5}}>These are proven ways to open your ad. Pick one, or let us surprise you!</p>{HOOKS.map(h=><button key={h.id} className={`hook-card ${form.hookFormula===h.id?"active":""}`} onClick={()=>set("hookFormula")(h.id)}><span style={{fontSize:"22px",flexShrink:0,marginTop:"1px"}}>{h.emoji}</span><div><div className="name">{h.name}</div><div className="tmpl">{h.template}</div>{h.example&&<div className="ex">e.g. "{h.example}"</div>}</div></button>)}</div></div></div>
-    <div className="section" style={{background:C.white}}><div className="section-inner"><div className="card">
-      <label className="field">What vibe fits your brand best?</label>
-      {vp&&<div style={{fontSize:"14px",color:C.coral,marginBottom:"10px",fontStyle:"italic"}}>We'll blend this with your voice profile. Think of this as an extra nudge in a direction.</div>}
-      <div className="pills">{["Warm & Encouraging","Professional & Direct","Casual & Fun","Bold & Confident","Educational & Helpful"].map(o=><button key={o} className={`pill ${form.tone===o?"active":""}`} onClick={()=>set("tone")(o)}>{o}</button>)}</div>
-      <label className="field">Anything unique about you or your offer? <span className="hint">(totally optional)</span></label>
-      <textarea className="inp" placeholder="e.g. I used to be a practicing dietitian myself, so I know the struggle firsthand" value={form.uniqueAngle} onChange={set("uniqueAngle")}/>
-    </div><div style={{display:"flex",gap:"12px",justifyContent:"flex-end",marginTop:"8px"}}><button className="btn-outline" onClick={()=>setStep(1)}>← Back</button><button className="btn-coral" onClick={()=>setStep(3)}>Next →</button></div></div></div></>}
+      {step>0&&step<5&&<div className="inner-hero">
+        <div className="section-label">{STEPS[step]?.label}</div>
+        <h2>{STEPS[step]?.title}</h2>
+        <p>{STEPS[step]?.desc}</p>
+        <div className="progress">{STEPS.map((_,i)=><div key={i} style={{background:i<step?C.coral:i===step?C.lime:C.tealMid}}/>)}</div>
+      </div>}
 
-    {step===3&&<div className="section" style={{background:C.cream}}><div className="section-inner"><div className="card">
-      <label className="field">What do you want people to do when they see your ad?</label>
-      <div className="pills">{["Download Now","Get the Free Guide","Sign Me Up","Grab Your Copy","Custom"].map(o=><button key={o} className={`pill ${form.callToAction===o?"active":""}`} onClick={()=>set("callToAction")(o)}>{o}</button>)}</div>
-      {form.callToAction==="Custom"&&<input className="inp" placeholder="Type your custom CTA here..." value={form.customCta} onChange={set("customCta")}/>}
-      <div style={{background:C.ltBlue+"33",border:`1.5px solid ${C.ltBlue}`,borderRadius:"14px",padding:"22px",fontSize:"15px",lineHeight:1.9,marginTop:"8px"}}><strong>Here's what we're working with:</strong><br/><span style={{opacity:.65}}><strong>Offer:</strong> {form.leadMagnetName||"(not filled in yet)"}<br/><strong>Audience:</strong> {form.audienceType||"(not filled in yet)"}<br/><strong>Hook:</strong> {HOOKS.find(h=>h.id===form.hookFormula)?.name||"Surprise Me!"}<br/><strong>Vibe:</strong> {form.tone}{vp&&<><br/><span style={{color:C.coral}}>🎯 Writing in your brand voice</span></>}</span></div>
-      {error&&<div className="tip tip-warn">{error}</div>}
-      <div style={{marginTop:"28px"}}><button className="btn-teal" disabled={loading||!step3Valid} style={{width:"100%",fontSize:"18px",padding:"18px",borderRadius:"14px"}} onClick={generate}>{loading?<span className="spinner" style={{gap:"8px"}}>{vp?"Writing 3 versions in your voice":"Cooking up 3 ad variations"} <Spinner/></span>:!step3Valid?"Fill in the required fields above":"✨ Write My Ads!"}</button></div>
-      {loading&&<div style={{textAlign:"center",marginTop:"12px",fontSize:"14px",color:C.teal,opacity:.55}}>{loadingSec<10?"This usually takes about 20 seconds...":loadingSec<25?"Still working on it...":loadingSec<45?"Almost there, writing the last variation...":"Taking a bit longer than usual, hang tight..."}</div>}
-      <div style={{display:"flex",gap:"12px",marginTop:"14px"}}><button className="btn-outline" onClick={()=>setStep(2)}>← Back</button></div>
-    </div></div></div>}
+      {/* Step 0 */}
+      {step===0&&<>
+        <div className="section" style={{background:C.cream}}>
+          <div className="section-inner">
+            <div className="card">
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"16px"}}><div/><button onClick={prefillExample} style={{background:"none",border:"none",color:C.coral,fontSize:"14px",fontWeight:600,cursor:"pointer",fontFamily:F.b,textDecoration:"underline"}}>Try an example to see how it works</button></div>
+              <label className="field">What's your lead magnet or freebie called? <span className="hint">(Or what are you thinking of calling it?)</span></label>
+              <input className="inp" placeholder='e.g. "5 Steps to Map Out Your Services"' value={form.leadMagnetName} onChange={set("leadMagnetName")}/>
+              <label className="field">What kind of freebie is it?</label>
+              <div className="pills">{["PDF / Guide","Workbook","Checklist","Video Training","Quiz","Template","Other"].map(o=><button key={o} className={`pill ${form.leadMagnetType===o?"active":""}`} onClick={()=>set("leadMagnetType")(o)}>{o}</button>)}</div>
+              <label className="field">What does it help someone do?</label>
+              <textarea className="inp" placeholder="e.g. Organize their services so their website is clearer and more clients say yes" value={form.whatItHelps} onChange={set("whatItHelps")}/>
+              <label className="field">Your business name <span className="hint">(totally optional!)</span></label>
+              <input className="inp" placeholder="e.g. Whitney Bateson Digital Strategy" value={form.businessName} onChange={set("businessName")}/>
+            </div>
+          </div>
+        </div>
+        <div className="section" style={{background:C.white}}>
+          <div className="section-inner">
+            <div className="card-alt">
+              <div style={{display:"flex",alignItems:"center",gap:"10px",marginBottom:"8px"}}><h3 style={{margin:0}}>Your Brand Voice</h3><span className="tag" style={{background:C.pink,fontSize:"10px"}}>Optional</span></div>
+              <p style={{fontSize:"16px",color:C.teal,opacity:.55,marginBottom:"22px",lineHeight:1.6}}>Want your ads to actually sound like <em>you</em>? Paste a sample of your writing and we'll learn your style.</p>
+              <label className="field">Paste something you've written <span className="hint">(a blog post, email, Instagram caption, your About page... anything!)</span></label>
+              <textarea className="inp" style={{minHeight:"120px"}} placeholder={"Drop in a paragraph or two of your writing here.\n\nThe more you share, the better we can match your voice. Even a few sentences work!"} value={form.writingSample} onChange={set("writingSample")}/>
+              <button className="btn-teal btn-sm" disabled={vL||!form.writingSample.trim()} onClick={()=>analyzeVoice(form.writingSample)}>{vL?<span className="spinner" style={{gap:"8px"}}>Analyzing <Spinner/></span>:"🔍 Analyze My Voice"}</button>
+              {vL&&<div style={{display:"flex",alignItems:"center",gap:"10px",background:C.ltBlue+"44",border:`1.5px solid ${C.ltBlue}`,borderRadius:"12px",padding:"14px 18px",fontSize:"15px",color:C.teal,marginTop:"16px"}}><Spinner dark/> Getting to know your writing style...</div>}
+              {vE&&<div className="tip tip-warn">{vE}</div>}
+              {vp&&<div style={{marginTop:"20px"}}><div className="voice-badge">✅ <strong>Got it! Here's what we picked up:</strong></div><div style={{background:C.white,border:`1.5px solid ${C.tealMid}`,borderRadius:"14px",padding:"22px",fontSize:"15px",lineHeight:1.7}}><div style={{fontWeight:700,marginBottom:"8px",fontSize:"16px"}}>{vp.summary}</div><div style={{display:"flex",flexWrap:"wrap",gap:"6px",marginBottom:"12px"}}>{vp.traits?.map((t,i)=><span key={i} style={{background:C.lime+"88",padding:"4px 14px",borderRadius:"14px",fontSize:"13px",fontWeight:600}}>{t}</span>)}</div><div style={{opacity:.65,fontSize:"14px"}}><strong>Personality:</strong> {vp.personality} · <strong>Style:</strong> {vp.sentenceStyle}</div></div><button className="btn-outline" style={{marginTop:"10px",padding:"8px 18px",fontSize:"13px",borderRadius:"8px"}} onClick={()=>{setVp(null);setVE(null)}}>Try Again</button></div>}
+              {!vp&&!vL&&<div className="tip">💡 <strong>No worries if you skip this!</strong> We'll still write great ad copy for you. It just won't be customized to your specific voice.</div>}
+            </div>
+            <div style={{display:"flex",justifyContent:"flex-end",alignItems:"center",gap:"14px",marginTop:"8px"}}>{!step0Valid&&<span style={{fontSize:"13px",color:C.coral,opacity:.7}}>Fill in your {missingFields(0).join(" & ")} to continue</span>}<button className="btn-coral" disabled={!step0Valid} onClick={()=>setStep(1)}>Next →</button></div>
+          </div>
+        </div>
+      </>}
 
-    {step===5&&results&&<div className="section" style={{background:C.cream}}><div className="section-inner">
-      <div className="var-tabs">{results.variations.map((v,i)=>{const sc=results.scores?.[i]?.overall;return <button key={i} className={`var-tab ${activeTab===i?"active":""}`} onClick={()=>{setActiveTab(i);setShowScores(false)}}><div>{["A","B","C"][i]}</div>{sc&&<div style={{fontSize:"11px",color:activeTab===i?C.lime:sColor(sc),fontWeight:700,marginTop:"2px"}}>{sc}/10</div>}</button>})}</div>
-      {(()=>{const v=results.variations[activeTab];const s=results.scores?.[activeTab];return <div className="card">
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"18px"}}><div style={{fontFamily:F.h,fontSize:"17px",fontWeight:700,color:C.teal}}>{v.label}</div><div style={{display:"flex",gap:"8px"}}><button className="btn-outline" style={{padding:"8px 16px",fontSize:"13px",borderRadius:"8px"}} disabled={regenIdx>=0} onClick={()=>regenerateOne(activeTab)}>{regenIdx===activeTab?<span className="spinner" style={{gap:"6px"}}>Rewriting <Spinner dark/></span>:"🔄 Regenerate this one"}</button><button onClick={()=>handleCopyFull(activeTab)} style={{background:copiedFull===activeTab?C.lime:C.teal,color:copiedFull===activeTab?C.teal:C.white,border:"none",padding:"8px 16px",borderRadius:"8px",fontSize:"13px",fontWeight:700,cursor:"pointer",fontFamily:F.b,transition:"all .2s"}}>{copiedFull===activeTab?"✓ Copied!":"📋 Copy Full Ad"}</button></div></div>
-        <CopyBlock tag="Primary Text" text={v.primaryText} limits={FB_LIM.primaryText}/>
-        <CopyBlock tag="Headline" text={v.headline} limits={FB_LIM.headline}/>
-        <CopyBlock tag="Description" text={v.description} limits={FB_LIM.description}/>
-        <CopyBlock tag="CTA Button" text={v.ctaButton}/>
-        {s&&<><button className="score-toggle" onClick={()=>setShowScores(!showScores)}><div style={{display:"flex",alignItems:"center",gap:"12px"}}><div style={{width:"42px",height:"42px",borderRadius:"50%",background:sColor(s.overall),display:"flex",alignItems:"center",justifyContent:"center",color:C.white,fontWeight:800,fontSize:"16px"}}>{s.overall}</div><div><div style={{fontWeight:700,fontSize:"15px",color:C.teal}}>Ad Score</div><div style={{fontSize:"12px",color:C.teal,opacity:.5}}>Tap to {showScores?"hide":"see"} the full breakdown + tips</div></div></div><span style={{fontSize:"18px",transition:"transform .2s",transform:showScores?"rotate(180deg)":"none"}}>▾</span></button>
-        {showScores&&<div className="score-detail"><ScoreBar label="Hook Strength" score={s.hookStrength}/><ScoreBar label="Clarity" score={s.clarity}/><ScoreBar label="Emotional Pull" score={s.emotionalPull}/><ScoreBar label="CTA Effectiveness" score={s.ctaEffectiveness}/><div style={{marginTop:"14px",background:C.limeSoft,borderRadius:"12px",padding:"16px 18px",fontSize:"15px",lineHeight:1.6}}>💡 <strong>How to make it even better:</strong> {s.topTip}</div></div>}</>}
-      </div>})()}
-      {error&&<div className="tip tip-warn" style={{marginTop:"8px"}}>{error}</div>}
-      <div style={{display:"flex",gap:"10px",flexWrap:"wrap",marginTop:"8px"}}>{!isReturning&&<button className="btn-outline" onClick={()=>{setResults(null);setStep(3);setError(null)}}>← Tweak & Regenerate All</button>}<button className="btn-teal" onClick={exportCopy}>📄 Download All Copy</button><button className={confirmReset?"btn-coral":"btn-outline"} onClick={startOver} style={confirmReset?{animation:"pulse .4s"}:{}}>{confirmReset?"Yes, clear everything":"🔄 Start a New Round"}</button></div>
-      <div className="tip">💡 <strong>Quick tip from us:</strong> Start by running your top-scoring variation. Give it 3 to 5 days and at least 1,000 impressions, then check your CTR and cost per lead. After that, test the next one. Don't run all 3 at once on a small budget!</div>
-    </div></div>}
+      {/* Step 1 */}
+      {step===1&&<div className="section" style={{background:C.cream}}><div className="section-inner">{voiceBadge()}<div className="card">
+        <label className="field">Who are you trying to reach?</label>
+        <input className="inp" placeholder="e.g. Dietitians in private practice who want more clients from their website" value={form.audienceType} onChange={set("audienceType")}/>
+        <label className="field">What's the thing that's frustrating them the most right now?</label>
+        <textarea className="inp" placeholder="e.g. Their website isn't bringing in clients and they have no idea what to change" value={form.biggestPainPoint} onChange={set("biggestPainPoint")}/>
+        <label className="field">And what do they actually want instead?</label>
+        <textarea className="inp" placeholder="e.g. A clear, professional website that makes people want to book with them" value={form.desiredOutcome} onChange={set("desiredOutcome")}/>
+        <div className="tip">💡 <strong>Remember from the training:</strong> The best ads follow this flow: <em>Problem they recognize → Solution they want → Clear benefit.</em> Keep that in mind as you fill this out!</div>
+      </div>{!step1Valid&&<div style={{fontSize:"13px",color:C.coral,opacity:.7,textAlign:"right",marginTop:"6px"}}>Fill in your {missingFields(1).join(", ")} to continue</div>}<div style={{display:"flex",gap:"12px",justifyContent:"flex-end",marginTop:"8px"}}><button className="btn-outline" onClick={()=>setStep(0)}>← Back</button><button className="btn-coral" disabled={!step1Valid} onClick={()=>setStep(2)}>Next →</button></div></div></div>}
+
+      {/* Step 2 */}
+      {step===2&&<><div className="section" style={{background:C.cream}}><div className="section-inner"><div className="card"><h3>Pick a Hook Formula</h3><p style={{fontSize:"15px",opacity:.5,marginBottom:"18px",lineHeight:1.5}}>These are proven ways to open your ad. Pick one, or let us surprise you!</p>{HOOKS.map(h=><button key={h.id} className={`hook-card ${form.hookFormula===h.id?"active":""}`} onClick={()=>set("hookFormula")(h.id)}><span style={{fontSize:"22px",flexShrink:0,marginTop:"1px"}}>{h.emoji}</span><div><div className="name">{h.name}</div><div className="tmpl">{h.template}</div>{h.example&&<div className="ex">e.g. "{h.example}"</div>}</div></button>)}</div></div></div>
+      <div className="section" style={{background:C.white}}><div className="section-inner"><div className="card">
+        <label className="field">What vibe fits your brand best?</label>
+        {vp&&<div style={{fontSize:"14px",color:C.coral,marginBottom:"10px",fontStyle:"italic"}}>We'll blend this with your voice profile. Think of this as an extra nudge in a direction.</div>}
+        <div className="pills">{["Warm & Encouraging","Professional & Direct","Casual & Fun","Bold & Confident","Educational & Helpful"].map(o=><button key={o} className={`pill ${form.tone===o?"active":""}`} onClick={()=>set("tone")(o)}>{o}</button>)}</div>
+        <label className="field">Anything unique about you or your offer? <span className="hint">(totally optional)</span></label>
+        <textarea className="inp" placeholder="e.g. I used to be a practicing dietitian myself, so I know the struggle firsthand" value={form.uniqueAngle} onChange={set("uniqueAngle")}/>
+      </div><div style={{display:"flex",gap:"12px",justifyContent:"flex-end",marginTop:"8px"}}><button className="btn-outline" onClick={()=>setStep(1)}>← Back</button><button className="btn-coral" onClick={()=>setStep(3)}>Next →</button></div></div></div></>}
+
+      {/* Step 3 */}
+      {step===3&&<div className="section" style={{background:C.cream}}><div className="section-inner"><div className="card">
+        <label className="field">What do you want people to do when they see your ad?</label>
+        <div className="pills">{["Download Now","Get the Free Guide","Sign Me Up","Grab Your Copy","Custom"].map(o=><button key={o} className={`pill ${form.callToAction===o?"active":""}`} onClick={()=>set("callToAction")(o)}>{o}</button>)}</div>
+        {form.callToAction==="Custom"&&<input className="inp" placeholder="Type your custom CTA here..." value={form.customCta} onChange={set("customCta")}/>}
+        <div style={{background:C.ltBlue+"33",border:`1.5px solid ${C.ltBlue}`,borderRadius:"14px",padding:"22px",fontSize:"15px",lineHeight:1.9,marginTop:"8px"}}><strong>Here's what we're working with:</strong><br/><span style={{opacity:.65}}><strong>Offer:</strong> {form.leadMagnetName||"(not filled in yet)"}<br/><strong>Audience:</strong> {form.audienceType||"(not filled in yet)"}<br/><strong>Hook:</strong> {HOOKS.find(h=>h.id===form.hookFormula)?.name||"Surprise Me!"}<br/><strong>Vibe:</strong> {form.tone}{vp&&<><br/><span style={{color:C.coral}}>🎯 Writing in your brand voice</span></>}</span></div>
+        {error&&<div className="tip tip-warn">{error}</div>}
+        <div style={{marginTop:"28px"}}><button className="btn-teal" disabled={loading||!step3Valid} style={{width:"100%",fontSize:"18px",padding:"18px",borderRadius:"14px"}} onClick={generate}>{loading?<span className="spinner" style={{gap:"8px"}}>{vp?"Writing 3 versions in your voice":"Cooking up 3 ad variations"} <Spinner/></span>:!step3Valid?"Fill in the required fields above":"✨ Write My Ads!"}</button></div>
+        {loading&&<div style={{textAlign:"center",marginTop:"12px",fontSize:"14px",color:C.teal,opacity:.55}}>{loadingSec<10?"This usually takes about 20 seconds...":loadingSec<25?"Still working on it...":loadingSec<45?"Almost there, writing the last variation...":"Taking a bit longer than usual, hang tight..."}</div>}
+        <div style={{display:"flex",gap:"12px",marginTop:"14px"}}><button className="btn-outline" onClick={()=>setStep(2)}>← Back</button></div>
+      </div></div></div>}
+    </>}
 
     <div className="footer"><img src={IMG.logoW} alt="Whitney Bateson"/><p>Built for Ads Made Simple by Whitney Bateson Digital Strategy</p></div>
   </div>;
