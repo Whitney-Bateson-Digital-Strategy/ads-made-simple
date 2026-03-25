@@ -137,7 +137,7 @@ function CopyBlock({tag,text,limits}){
 
 /* ═══ MAIN ═══ */
 function App({ userEmail, onLogout }){
-  const[step,setStep]=useState(0);const[form,setForm]=useState(INIT);const[loading,setLoading]=useState(false);const[results,setResults]=useState(null);const[activeTab,setActiveTab]=useState(0);const[error,setError]=useState(null);const[vp,setVp]=useState(null);const[vL,setVL]=useState(false);const[vE,setVE]=useState(null);const[showScores,setShowScores]=useState(false);const[confirmReset,setConfirmReset]=useState(false);const[loadingSec,setLoadingSec]=useState(0);const[remaining,setRemaining]=useState(3);const[dataLoaded,setDataLoaded]=useState(false);const loadingTimer=useRef(null);const topRef=useRef(null);
+  const[step,setStep]=useState(0);const[form,setForm]=useState(INIT);const[loading,setLoading]=useState(false);const[results,setResults]=useState(null);const[activeTab,setActiveTab]=useState(0);const[error,setError]=useState(null);const[vp,setVp]=useState(null);const[vL,setVL]=useState(false);const[vE,setVE]=useState(null);const[showScores,setShowScores]=useState(false);const[confirmReset,setConfirmReset]=useState(false);const[loadingSec,setLoadingSec]=useState(0);const[remaining,setRemaining]=useState(3);const[dataLoaded,setDataLoaded]=useState(false);const[isReturning,setIsReturning]=useState(false);const loadingTimer=useRef(null);const topRef=useRef(null);
 
   /* Load saved voice + session on mount */
   useEffect(()=>{if(!userEmail)return;(async()=>{
@@ -147,7 +147,7 @@ function App({ userEmail, onLogout }){
       if(voice)setVp({summary:voice.summary,traits:voice.traits,sentenceStyle:voice.sentence_style,vocabulary:voice.vocabulary,personality:voice.personality,avoids:voice.avoids});
       const{data:sessions}=await sb.from("sessions").select("*").eq("email",userEmail).limit(1);
       const sess=sessions?.[0];
-      if(sess){if(sess.form_data)setForm(f=>({...f,...sess.form_data}));if(sess.current_step)setStep(sess.current_step);if(sess.results)setResults(sess.results);}
+      if(sess){if(sess.form_data)setForm(f=>({...f,...sess.form_data}));if(sess.results){setResults(sess.results);setStep(5);setIsReturning(true);}else if(sess.current_step){setStep(sess.current_step);}}
       const todayStart=new Date(new Date().toISOString().slice(0,10)).toISOString();
       const{data:logs}=await sb.from("generation_log").select("id").eq("email",userEmail).gte("created_at",todayStart);
       setRemaining(Math.max(0,3-(logs?.length||0)));
@@ -206,7 +206,7 @@ function App({ userEmail, onLogout }){
   const regenerateOne=async(idx)=>{setRegenIdx(idx);
     try{const d=await callEdge("generate-ads",{form,voiceProfile:vp,mode:"regenerate_one",existingVariations:results.variations,regenIdx:idx});const parsed=d.results;const newVars=[...results.variations];newVars[idx]={label:parsed.label,primaryText:parsed.primaryText,headline:parsed.headline,description:parsed.description,ctaButton:parsed.ctaButton};const newScores=[...(results.scores||[])];if(parsed.score)newScores[idx]=parsed.score;setResults({...results,variations:newVars,scores:newScores});}catch(e){console.error(e);setError(friendlyError(e));}finally{setRegenIdx(-1);}};
 
-  const startOver=()=>{if(!confirmReset){setConfirmReset(true);return;}setStep(0);setForm(INIT);setResults(null);setError(null);setVE(null);setShowScores(false);setConfirmReset(false);if(userEmail)sb.from("sessions").upsert({email:userEmail,form_data:INIT,current_step:0,results:null,updated_at:new Date().toISOString()},{onConflict:"email"});};
+  const startOver=()=>{if(!confirmReset){setConfirmReset(true);return;}setStep(0);setForm(INIT);setResults(null);setError(null);setVE(null);setShowScores(false);setConfirmReset(false);setIsReturning(false);if(userEmail)sb.from("sessions").upsert({email:userEmail,form_data:INIT,current_step:0,results:null,updated_at:new Date().toISOString()},{onConflict:"email"});};
   useEffect(()=>{if(confirmReset){const t=setTimeout(()=>setConfirmReset(false),4000);return()=>clearTimeout(t);}},[confirmReset]);
 
   const voiceBadge=()=>vp?<div className="voice-badge">✅ Voice matched: <em>{vp.personality}</em></div>:null;
@@ -342,9 +342,9 @@ function App({ userEmail, onLogout }){
 
     {/* RESULTS HERO */}
     {step===5&&<div className="results-hero">
-      <div style={{marginBottom:"16px"}}><div style={{position:"relative",display:"inline-block"}}><img src={IMG.avatar} alt="Whitney" style={{width:"80px",height:"80px",borderRadius:"50%",objectFit:"cover",border:`3px solid ${C.lime}`}}/><span style={{position:"absolute",bottom:"-2px",right:"-6px",fontSize:"24px"}}>🎉</span></div></div>
-      <h2>Your ads are ready!</h2>
-      <p>{vp?`Written in your voice (${vp.personality}). Pick your favorite or test them all!`:"Pick your favorite, tweak it, or A/B test them all!"}</p>
+      <div style={{marginBottom:"16px"}}><div style={{position:"relative",display:"inline-block"}}><img src={IMG.avatar} alt="Whitney" style={{width:"80px",height:"80px",borderRadius:"50%",objectFit:"cover",border:`3px solid ${C.lime}`}}/><span style={{position:"absolute",bottom:"-2px",right:"-6px",fontSize:"24px"}}>{isReturning?"👋":"🎉"}</span></div></div>
+      <h2>{isReturning?"Welcome back!":"Your ads are ready!"}</h2>
+      <p>{isReturning?"Here are the ads we created for you last time. You can copy them, download them, or start a new round.":(vp?`Written in your voice (${vp.personality}). Pick your favorite or test them all!`:"Pick your favorite, tweak it, or A/B test them all!")}</p>
     </div>}
 
     {/* STEP CONTENT */}
@@ -424,7 +424,7 @@ function App({ userEmail, onLogout }){
         {showScores&&<div className="score-detail"><ScoreBar label="Hook Strength" score={s.hookStrength}/><ScoreBar label="Clarity" score={s.clarity}/><ScoreBar label="Emotional Pull" score={s.emotionalPull}/><ScoreBar label="CTA Effectiveness" score={s.ctaEffectiveness}/><div style={{marginTop:"14px",background:C.limeSoft,borderRadius:"12px",padding:"16px 18px",fontSize:"15px",lineHeight:1.6}}>💡 <strong>How to make it even better:</strong> {s.topTip}</div></div>}</>}
       </div>})()}
       {error&&<div className="tip tip-warn" style={{marginTop:"8px"}}>{error}</div>}
-      <div style={{display:"flex",gap:"10px",flexWrap:"wrap",marginTop:"8px"}}><button className="btn-outline" onClick={()=>{setResults(null);setStep(3);setError(null)}}>← Tweak & Regenerate All</button><button className="btn-teal" onClick={exportCopy}>📄 Download All Copy</button><button className={confirmReset?"btn-coral":"btn-outline"} onClick={startOver} style={confirmReset?{animation:"pulse .4s"}:{}}>{confirmReset?"Yes, clear everything":"Start Over"}</button></div>
+      <div style={{display:"flex",gap:"10px",flexWrap:"wrap",marginTop:"8px"}}>{!isReturning&&<button className="btn-outline" onClick={()=>{setResults(null);setStep(3);setError(null)}}>← Tweak & Regenerate All</button>}<button className="btn-teal" onClick={exportCopy}>📄 Download All Copy</button><button className={confirmReset?"btn-coral":"btn-outline"} onClick={startOver} style={confirmReset?{animation:"pulse .4s"}:{}}>{confirmReset?"Yes, clear everything":"🔄 Start a New Round"}</button></div>
       <div className="tip">💡 <strong>Quick tip from us:</strong> Start by running your top-scoring variation. Give it 3 to 5 days and at least 1,000 impressions, then check your CTR and cost per lead. After that, test the next one. Don't run all 3 at once on a small budget!</div>
     </div></div>}
 
