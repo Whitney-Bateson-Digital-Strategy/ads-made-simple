@@ -214,6 +214,10 @@ function App({ userEmail, onLogout }){
   const[copiedFull,setCopiedFull]=useState(-1);
   const handleCopyFull=(i)=>{copyFullAd(results.variations[i]);setCopiedFull(i);setTimeout(()=>setCopiedFull(-1),2e3);};
 
+  /* Start Over */
+  const[showStartOver,setShowStartOver]=useState(false);
+  const startOver=async()=>{setForm(INIT);setResults(null);setStep(0);setActiveTab(0);setShowScores(false);setError(null);setShowStartOver(false);setView("wizard");try{await sb.from("sessions").upsert({email:userEmail,form_data:INIT,current_step:0,results:null,updated_at:new Date().toISOString()},{onConflict:"email"});}catch(e){console.error("Reset error:",e);}};
+
   const voiceBadge=()=>vp?<div className="voice-badge">✅ Voice matched: <em>{vp.personality}</em></div>:null;
 
   /* ═══ RENDER ═══ */
@@ -286,6 +290,10 @@ function App({ userEmail, onLogout }){
       /* TIPS */
       .tip{background:${C.limeSoft};border:1.5px solid ${C.lime};border-radius:14px;padding:18px 22px;font-size:15px;line-height:1.6;color:${C.teal};margin-top:20px}
       .tip-warn{background:${C.pink};border-color:${C.coral}}
+
+      /* MODAL */
+      .modal-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(2,82,93,.45);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;z-index:999;padding:24px;animation:fadeIn .2s ease}
+      .modal-card{background:${C.white};border-radius:20px;padding:36px;max-width:460px;width:100%;box-shadow:0 12px 40px rgba(2,82,93,.2)}
 
       /* TAGS */
       .tag{background:${C.lime};color:${C.teal};font-size:11px;font-weight:700;padding:4px 14px;border-radius:20px;letter-spacing:.5px;text-transform:uppercase}
@@ -372,10 +380,18 @@ function App({ userEmail, onLogout }){
           <p style={{fontSize:"14px",color:C.teal,opacity:.55,lineHeight:1.5,marginBottom:"18px"}}>Short, punchy lines to put directly on your ad image or graphic. Copy one and drop it on your creative!</p>
           {results.creativeHooks.map((hook,i)=><CreativeHookBlock key={i} index={i} text={hook}/>)}
         </div>}
-        <div style={{display:"flex",justifyContent:"center",marginTop:"8px"}}><button className="btn-teal" onClick={exportCopy}>📄 Download All Copy</button></div>
+        <div style={{display:"flex",justifyContent:"center",gap:"12px",marginTop:"8px",flexWrap:"wrap"}}><button className="btn-teal" onClick={exportCopy}>📄 Download All Copy</button><button className="btn-outline" onClick={()=>setShowStartOver(true)}>Start Over</button></div>
         <div className="tip">💡 <strong>Quick tip:</strong> Start by running your top-scoring variation. Give it 3 to 5 days and at least 1,000 impressions, then check your CTR and cost per lead. After that, test the next one.</div>
       </div></div>}
     </>}
+
+    {/* Start Over Confirmation Modal */}
+    {showStartOver&&<div className="modal-overlay" onClick={()=>setShowStartOver(false)}><div className="modal-card" onClick={e=>e.stopPropagation()}>
+      <h3 style={{fontFamily:F.h,fontSize:"22px",fontWeight:800,color:C.teal,marginBottom:"10px"}}>Start over from scratch?</h3>
+      <p style={{fontSize:"15px",color:C.teal,opacity:.65,lineHeight:1.7,marginBottom:"8px"}}>This will clear all your current ad copy and form answers so you can create a brand new set of ads.</p>
+      <p style={{fontSize:"14px",color:C.coral,fontWeight:600,lineHeight:1.6,marginBottom:"24px"}}>Your brand voice profile will be kept, but your current ad variations will be gone for good. Make sure you've downloaded anything you want to save first!</p>
+      <div style={{display:"flex",gap:"12px",justifyContent:"flex-end"}}><button className="btn-outline" onClick={()=>setShowStartOver(false)}>Never mind</button><button className="btn-coral" onClick={startOver}>Yes, start over</button></div>
+    </div></div>}
 
     {/* ═══ WIZARD VIEW ═══ */}
     {view==="wizard"&&<>
