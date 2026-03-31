@@ -194,19 +194,30 @@ function App({ userEmail, onLogout }){
   /* Voice */
   const analyzeVoice=async(text)=>{if(!text||text.trim().length<50){setVE("We need at least a few sentences to get a feel for your voice. Paste a little more and try again!");return;}setVL(true);setVE(null);setVp(null);try{const d=await callEdge("analyze-voice",{writingSample:text});setVp(d.voice);}catch(e){setVE(friendlyError(e));}finally{setVL(false);}};
 
-  /* Generate creative hooks from form + variations — second-person voice, punchy, under 8 words */
-  const buildCreativeHooks=(f,vars)=>{
-    const offer=f.leadMagnetName||"Your Free Guide";const pain=f.biggestPainPoint||"";const outcome=f.desiredOutcome||f.whatItHelps||"";
+  /* Generate creative hooks — punchy, second-person, ≤10 words, pattern-interrupt style */
+  const buildCreativeHooks=(f)=>{
+    const pain=f.biggestPainPoint||"";const outcome=f.desiredOutcome||f.whatItHelps||"";
+    const cap=s=>s.charAt(0).toUpperCase()+s.slice(1);
+    /* Extract short phrases (≤6 words) from user input */
+    const shorten=(s,max)=>s.split(/\s+/).slice(0,max).join(" ").replace(/[.!?,;:]+$/,"");
     const hooks=[];
-    hooks.push(`Get Your Free ${f.leadMagnetType==="PDF / Guide"?"Guide":f.leadMagnetType==="Checklist"?"Checklist":f.leadMagnetType==="Video Training"?"Training":f.leadMagnetType==="Quiz"?"Quiz":f.leadMagnetType==="Template"?"Template":f.leadMagnetType==="Workbook"?"Workbook":"Guide"}`);
-    if(pain){const words=pain.split(/\s+/).slice(0,5).join(" ");hooks.push(`Stop letting ${words.toLowerCase()}`);}else if(outcome){const words=outcome.split(/\s+/).slice(0,4).join(" ");hooks.push(`You deserve to ${words.toLowerCase()}`);}else{hooks.push("You deserve better results");}
-    hooks.push(`Your ${offer.split(/\s+/).length<=4?offer:"shortcut"} is waiting`);
+    /* Hook 1: Pain-point call-out as bold statement */
+    if(pain){const short=shorten(pain,6);hooks.push(`Your ${short.toLowerCase()} is fixable.`);}
+    else{hooks.push("You're closer than you think.");}
+    /* Hook 2: Pointed question about pain or current state */
+    if(pain){const q=shorten(pain,5);hooks.push(`Still struggling with ${q.toLowerCase()}?`);}
+    else if(outcome){const q=shorten(outcome,5);hooks.push(`Ready to ${q.toLowerCase()}?`);}
+    else{hooks.push("What if it didn't have to be this hard?");}
+    /* Hook 3: Outcome-driven pattern interrupt */
+    if(outcome){const o=shorten(outcome,5);hooks.push(`${cap(o)} starts here.`);}
+    else if(pain){hooks.push("There's a better way. Here's proof.");}
+    else{hooks.push("Stop guessing. Start growing.");}
     return hooks;
   };
 
   /* Generate — when done, go to dashboard */
   const generate=async()=>{setLoading(true);setError(null);setActiveTab(0);setShowScores(false);
-    try{const d=await callEdge("generate-ads",{form,voiceProfile:vp,mode:"generate_all"});if(!d.results?.variations||d.results.variations.length===0)throw new Error("no results");if(!d.results.creativeHooks){d.results.creativeHooks=buildCreativeHooks(form,d.results.variations);}setResults(d.results);setView("dashboard");}catch(e){console.error(e);setError(friendlyError(e));}finally{setLoading(false);}};
+    try{const d=await callEdge("generate-ads",{form,voiceProfile:vp,mode:"generate_all"});if(!d.results?.variations||d.results.variations.length===0)throw new Error("no results");if(!d.results.creativeHooks){d.results.creativeHooks=buildCreativeHooks(form);}setResults(d.results);setView("dashboard");}catch(e){console.error(e);setError(friendlyError(e));}finally{setLoading(false);}};
 
   /* Export */
   const exportCopy=()=>{if(!results)return;let t=`ADS MADE SIMPLE · Ad Copy Export\n${"═".repeat(45)}\nGenerated: ${new Date().toLocaleDateString()}\n`;if(form.businessName)t+=`Business: ${form.businessName}\n`;t+=`Offer: ${form.leadMagnetName}\n`;if(vp)t+=`Voice: ${vp.personality}\n`;t+=`\n`;results.variations.forEach((v,i)=>{const s=results.scores?.[i];t+=`${"-".repeat(45)}\n${v.label.toUpperCase()}${s?` (Score: ${s.overall}/10)`:""}\n${"-".repeat(45)}\n\n`;t+=`PRIMARY TEXT:\n${v.primaryText}\n\nHEADLINE: ${v.headline}\nDESCRIPTION: ${v.description}\nCTA BUTTON: ${v.ctaButton}\n`;if(s)t+=`\nTip: ${s.topTip}\n`;t+=`\n`;});if(results.creativeHooks&&results.creativeHooks.length>0){t+=`${"-".repeat(45)}\nTEXT FOR YOUR AD CREATIVE\n${"-".repeat(45)}\nShort lines to put directly on your ad image:\n\n`;results.creativeHooks.forEach((h,i)=>{t+=`  ${i+1}. ${h}\n`;});t+=`\n`;}t+=`\n${"═".repeat(45)}\nBuilt with Ads Made Simple by Whitney Bateson Digital Strategy\n`;const blob=new Blob([t],{type:"text/plain"});const u=URL.createObjectURL(blob);const a=document.createElement("a");a.href=u;a.download="ad-copy-export.txt";a.click();URL.revokeObjectURL(u);};
@@ -238,15 +249,11 @@ function App({ userEmail, onLogout }){
       .nav-badge{background:${C.lime};color:${C.teal};font-size:11px;font-weight:700;padding:4px 14px;border-radius:20px;text-transform:uppercase;letter-spacing:.5px}
 
       /* HERO */
-      .hero{background:${C.white};display:flex;align-items:stretch;max-width:960px;margin:0 auto}
-      .hero-img{flex:0 0 40%;background:url(${IMG.hero}) center/cover no-repeat;min-height:400px}
-      .hero-text{flex:1;padding:52px 48px;display:flex;flex-direction:column;justify-content:center}
+      .hero{background:${C.cream};padding:80px 32px 60px;text-align:center;max-width:960px;margin:0 auto}
       .hero-label{font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:2.5px;color:${C.coral};margin-bottom:14px}
       .hero h1{font-family:${F.h};font-size:clamp(30px,4.5vw,42px);font-weight:900;color:${C.teal};line-height:1.15;margin-bottom:20px}
-      .hero h1 span{font-family:${F.a};color:${C.coral};font-weight:700;font-size:clamp(34px,5vw,48px)}
-      .hero p{font-size:18px;color:${C.teal};opacity:.6;line-height:1.7;margin-bottom:14px;max-width:460px}
-      .hero-wave{max-width:960px;margin:0 auto;margin-top:-1px;line-height:0}
-      .hero-wave svg{width:100%;height:60px;display:block}
+      .hero h1 span{font-family:${F.a};color:${C.coral};font-weight:700;font-size:clamp(34px,5vw,48px);display:inline-block;border-bottom:3px solid ${C.coral};padding-bottom:2px}
+      .hero p{font-size:18px;color:${C.teal};opacity:.6;line-height:1.7;margin-bottom:14px;max-width:520px;margin-left:auto;margin-right:auto}
 
       /* INNER HERO (steps 2-4) */
       .inner-hero{background:linear-gradient(135deg,${C.ltBlue}22,${C.cream});padding:52px 32px 40px;text-align:center}
@@ -334,9 +341,7 @@ function App({ userEmail, onLogout }){
       .results-hero p{font-size:17px;color:${C.ltBlue};opacity:.85;max-width:440px;margin:0 auto}
 
       @media(max-width:700px){
-        .hero{flex-direction:column}
-        .hero-img{min-height:280px;flex:none}
-        .hero-text{padding:36px 24px}
+        .hero{padding:56px 24px 40px}
         .section{padding:36px 20px}
         .card,.card-alt{padding:24px}
       }
@@ -396,12 +401,11 @@ function App({ userEmail, onLogout }){
     {/* ═══ WIZARD VIEW ═══ */}
     {view==="wizard"&&<>
       {/* HERO (Step 0) or INNER HERO (Steps 1-3) */}
-      {step===0&&<div className="hero"><div className="hero-img"/><div className="hero-text">
+      {step===0&&<div className="hero">
         <div className="hero-label">Ads Made Simple</div>
         <h1>Let's Create Your <span>Facebook Ad Copy</span></h1>
         <p>Answer a few quick questions and get 3 scroll-stopping ad variations{vp?", written in your voice":""}, scored and ready to launch.</p>
-      </div></div>}
-      {step===0&&<div className="hero-wave"><svg viewBox="0 0 1440 60" preserveAspectRatio="none"><path d="M0,0 C360,50 1080,50 1440,0 L1440,60 L0,60 Z" fill={C.cream}/></svg></div>}
+      </div>}
 
       {step>0&&step<5&&<div className="inner-hero">
         <div className="section-label">{STEPS[step]?.label}</div>
@@ -412,7 +416,7 @@ function App({ userEmail, onLogout }){
 
       {/* Step 0 */}
       {step===0&&<>
-        <div className="section" style={{background:C.cream,paddingTop:"0"}}>
+        <div className="section" style={{background:C.cream}}>
           <div className="section-inner">
             <div className="card">
               <label className="field">What's your lead magnet or freebie called? <span className="hint">(Or what are you thinking of calling it?)</span></label>
