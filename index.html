@@ -135,6 +135,11 @@ function CopyBlock({tag,text,limits}){
   return <div style={{marginBottom:"24px"}}><div style={{display:"flex",alignItems:"center",gap:"8px",marginBottom:"8px"}}><span className="tag">{tag}</span>{st&&<span style={{fontSize:"12px",color:st.color,fontWeight:st.over?700:400}}>{st.label}</span>}</div><div style={{background:C.white,border:`1.5px solid ${st?.over?C.sRed+"55":C.tealMid}`,borderRadius:"12px",padding:"18px 56px 18px 18px",fontSize:"16px",lineHeight:1.75,color:C.teal,whiteSpace:"pre-wrap",position:"relative"}}>{text}<button onClick={()=>{navigator.clipboard.writeText(text);setCopied(true);setTimeout(()=>setCopied(false),2e3)}} className="copy-btn">{copied?"✓ Copied":"Copy"}</button></div></div>;
 }
 
+function CreativeHookBlock({index,text}){
+  const[copied,setCopied]=useState(false);
+  return <div style={{display:"flex",alignItems:"center",gap:"12px",padding:"14px 18px",background:C.cream,borderRadius:"12px",marginBottom:"10px",border:`1.5px solid ${C.tealMid}`}}><span style={{fontSize:"20px",flexShrink:0}}>{["🎨","✏️","🖼️"][index%3]}</span><div style={{flex:1,fontSize:"15px",fontWeight:600,color:C.teal,lineHeight:1.5}}>{text}</div><button onClick={()=>{navigator.clipboard.writeText(text);setCopied(true);setTimeout(()=>setCopied(false),2e3)}} style={{background:copied?C.lime:C.teal,color:copied?C.teal:C.white,border:"none",padding:"6px 14px",borderRadius:"8px",fontSize:"12px",fontWeight:700,cursor:"pointer",fontFamily:F.b,flexShrink:0,transition:"all .2s"}}>{copied?"✓":"Copy"}</button></div>;
+}
+
 /* ═══ MAIN ═══ */
 function App({ userEmail, onLogout }){
   const[view,setView]=useState("loading");const[step,setStep]=useState(0);const[form,setForm]=useState(INIT);const[loading,setLoading]=useState(false);const[results,setResults]=useState(null);const[activeTab,setActiveTab]=useState(0);const[error,setError]=useState(null);const[vp,setVp]=useState(null);const[vL,setVL]=useState(false);const[vE,setVE]=useState(null);const[showScores,setShowScores]=useState(false);const[loadingSec,setLoadingSec]=useState(0);const[dataLoaded,setDataLoaded]=useState(false);const loadingTimer=useRef(null);const topRef=useRef(null);
@@ -189,12 +194,22 @@ function App({ userEmail, onLogout }){
   /* Voice */
   const analyzeVoice=async(text)=>{if(!text||text.trim().length<50){setVE("We need at least a few sentences to get a feel for your voice. Paste a little more and try again!");return;}setVL(true);setVE(null);setVp(null);try{const d=await callEdge("analyze-voice",{writingSample:text});setVp(d.voice);}catch(e){setVE(friendlyError(e));}finally{setVL(false);}};
 
+  /* Generate creative hooks from form + variations */
+  const buildCreativeHooks=(f,vars)=>{
+    const offer=f.leadMagnetName||"your free guide";const outcome=f.desiredOutcome||f.whatItHelps||"get results";const pain=f.biggestPainPoint||"";
+    const hooks=[];
+    hooks.push(`FREE: ${offer}`);
+    if(pain){const short=pain.length>50?pain.slice(0,pain.lastIndexOf(" ",50))+"?":pain+"?";hooks.push(`Tired of ${short.charAt(0).toLowerCase()+short.slice(1)}`);}else{hooks.push(`Stop guessing. Start ${outcome.charAt(0).toLowerCase()+outcome.slice(1)}.`);}
+    const hl=vars[0]?.headline||"";if(hl.length>0&&hl.length<=60){hooks.push(hl);}else{hooks.push(`The ${f.leadMagnetType||"guide"} everyone's downloading`);}
+    return hooks;
+  };
+
   /* Generate — when done, go to dashboard */
   const generate=async()=>{setLoading(true);setError(null);setActiveTab(0);setShowScores(false);
-    try{const d=await callEdge("generate-ads",{form,voiceProfile:vp,mode:"generate_all"});if(!d.results?.variations||d.results.variations.length===0)throw new Error("no results");setResults(d.results);setView("dashboard");}catch(e){console.error(e);setError(friendlyError(e));}finally{setLoading(false);}};
+    try{const d=await callEdge("generate-ads",{form,voiceProfile:vp,mode:"generate_all"});if(!d.results?.variations||d.results.variations.length===0)throw new Error("no results");if(!d.results.creativeHooks){d.results.creativeHooks=buildCreativeHooks(form,d.results.variations);}setResults(d.results);setView("dashboard");}catch(e){console.error(e);setError(friendlyError(e));}finally{setLoading(false);}};
 
   /* Export */
-  const exportCopy=()=>{if(!results)return;let t=`ADS MADE SIMPLE · Ad Copy Export\n${"═".repeat(45)}\nGenerated: ${new Date().toLocaleDateString()}\n`;if(form.businessName)t+=`Business: ${form.businessName}\n`;t+=`Offer: ${form.leadMagnetName}\n`;if(vp)t+=`Voice: ${vp.personality}\n`;t+=`\n`;results.variations.forEach((v,i)=>{const s=results.scores?.[i];t+=`${"-".repeat(45)}\n${v.label.toUpperCase()}${s?` (Score: ${s.overall}/10)`:""}\n${"-".repeat(45)}\n\n`;t+=`PRIMARY TEXT:\n${v.primaryText}\n\nHEADLINE: ${v.headline}\nDESCRIPTION: ${v.description}\nCTA BUTTON: ${v.ctaButton}\n`;if(s)t+=`\nTip: ${s.topTip}\n`;t+=`\n`;});t+=`\n${"═".repeat(45)}\nBuilt with Ads Made Simple by Whitney Bateson Digital Strategy\n`;const blob=new Blob([t],{type:"text/plain"});const u=URL.createObjectURL(blob);const a=document.createElement("a");a.href=u;a.download="ad-copy-export.txt";a.click();URL.revokeObjectURL(u);};
+  const exportCopy=()=>{if(!results)return;let t=`ADS MADE SIMPLE · Ad Copy Export\n${"═".repeat(45)}\nGenerated: ${new Date().toLocaleDateString()}\n`;if(form.businessName)t+=`Business: ${form.businessName}\n`;t+=`Offer: ${form.leadMagnetName}\n`;if(vp)t+=`Voice: ${vp.personality}\n`;t+=`\n`;results.variations.forEach((v,i)=>{const s=results.scores?.[i];t+=`${"-".repeat(45)}\n${v.label.toUpperCase()}${s?` (Score: ${s.overall}/10)`:""}\n${"-".repeat(45)}\n\n`;t+=`PRIMARY TEXT:\n${v.primaryText}\n\nHEADLINE: ${v.headline}\nDESCRIPTION: ${v.description}\nCTA BUTTON: ${v.ctaButton}\n`;if(s)t+=`\nTip: ${s.topTip}\n`;t+=`\n`;});if(results.creativeHooks&&results.creativeHooks.length>0){t+=`${"-".repeat(45)}\nTEXT FOR YOUR AD CREATIVE\n${"-".repeat(45)}\nShort lines to put directly on your ad image:\n\n`;results.creativeHooks.forEach((h,i)=>{t+=`  ${i+1}. ${h}\n`;});t+=`\n`;}t+=`\n${"═".repeat(45)}\nBuilt with Ads Made Simple by Whitney Bateson Digital Strategy\n`;const blob=new Blob([t],{type:"text/plain"});const u=URL.createObjectURL(blob);const a=document.createElement("a");a.href=u;a.download="ad-copy-export.txt";a.click();URL.revokeObjectURL(u);};
   const copyFullAd=(v)=>{const t=`${v.primaryText}\n\nHeadline: ${v.headline}\nDescription: ${v.description}\nCTA: ${v.ctaButton}`;navigator.clipboard.writeText(t);};
   const[copiedFull,setCopiedFull]=useState(-1);
   const handleCopyFull=(i)=>{copyFullAd(results.variations[i]);setCopiedFull(i);setTimeout(()=>setCopiedFull(-1),2e3);};
@@ -226,8 +241,6 @@ function App({ userEmail, onLogout }){
       .hero h1{font-family:${F.h};font-size:clamp(30px,4.5vw,42px);font-weight:900;color:${C.teal};line-height:1.15;margin-bottom:20px}
       .hero h1 span{font-family:${F.a};color:${C.coral};font-weight:700;font-size:clamp(34px,5vw,48px)}
       .hero p{font-size:18px;color:${C.teal};opacity:.6;line-height:1.7;margin-bottom:14px;max-width:460px}
-      .hero .doc-link{font-size:15px;color:${C.teal};opacity:.55}
-      .hero .doc-link a{color:${C.coral};text-decoration:underline;font-weight:600}
 
       /* INNER HERO (steps 2-4) */
       .inner-hero{background:linear-gradient(135deg,${C.ltBlue}22,${C.cream});padding:52px 32px 40px;text-align:center}
@@ -352,6 +365,11 @@ function App({ userEmail, onLogout }){
           {s&&<><button className="score-toggle" onClick={()=>setShowScores(!showScores)}><div style={{display:"flex",alignItems:"center",gap:"12px"}}><div style={{width:"42px",height:"42px",borderRadius:"50%",background:sColor(s.overall),display:"flex",alignItems:"center",justifyContent:"center",color:C.white,fontWeight:800,fontSize:"16px"}}>{s.overall}</div><div><div style={{fontWeight:700,fontSize:"15px",color:C.teal}}>Ad Score</div><div style={{fontSize:"12px",color:C.teal,opacity:.5}}>Tap to {showScores?"hide":"see"} the full breakdown + tips</div></div></div><span style={{fontSize:"18px",transition:"transform .2s",transform:showScores?"rotate(180deg)":"none"}}>▾</span></button>
           {showScores&&<div className="score-detail"><ScoreBar label="Hook Strength" score={s.hookStrength}/><ScoreBar label="Clarity" score={s.clarity}/><ScoreBar label="Emotional Pull" score={s.emotionalPull}/><ScoreBar label="CTA Effectiveness" score={s.ctaEffectiveness}/><div style={{marginTop:"14px",background:C.limeSoft,borderRadius:"12px",padding:"16px 18px",fontSize:"15px",lineHeight:1.6}}>💡 <strong>How to make it even better:</strong> {s.topTip}</div></div>}</>}
         </div>})()}
+        {results.creativeHooks&&results.creativeHooks.length>0&&<div className="card" style={{marginTop:"8px"}}>
+          <div style={{fontFamily:F.h,fontSize:"17px",fontWeight:700,color:C.teal,marginBottom:"6px"}}>Text for Your Ad Creative</div>
+          <p style={{fontSize:"14px",color:C.teal,opacity:.55,lineHeight:1.5,marginBottom:"18px"}}>Short, punchy lines to put directly on your ad image or graphic. Copy one and drop it on your creative!</p>
+          {results.creativeHooks.map((hook,i)=><CreativeHookBlock key={i} index={i} text={hook}/>)}
+        </div>}
         <div style={{display:"flex",justifyContent:"center",marginTop:"8px"}}><button className="btn-teal" onClick={exportCopy}>📄 Download All Copy</button></div>
         <div className="tip">💡 <strong>Quick tip:</strong> Start by running your top-scoring variation. Give it 3 to 5 days and at least 1,000 impressions, then check your CTR and cost per lead. After that, test the next one.</div>
       </div></div>}
@@ -364,7 +382,6 @@ function App({ userEmail, onLogout }){
         <div className="hero-label">Ads Made Simple</div>
         <h1>Let's Create Your <span>Facebook Ad Copy</span></h1>
         <p>Answer a few quick questions and get 3 scroll-stopping ad variations{vp?", written in your voice":""}, scored and ready to launch.</p>
-        <div className="doc-link">Prefer to work in a doc? Grab the <a href="#">Google Doc version here</a> and fill it out at your own pace.</div>
       </div></div>}
 
       {step>0&&step<5&&<div className="inner-hero">
@@ -379,7 +396,6 @@ function App({ userEmail, onLogout }){
         <div className="section" style={{background:C.cream}}>
           <div className="section-inner">
             <div className="card">
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"16px"}}><div/><button onClick={prefillExample} style={{background:"none",border:"none",color:C.coral,fontSize:"14px",fontWeight:600,cursor:"pointer",fontFamily:F.b,textDecoration:"underline"}}>Try an example to see how it works</button></div>
               <label className="field">What's your lead magnet or freebie called? <span className="hint">(Or what are you thinking of calling it?)</span></label>
               <input className="inp" placeholder='e.g. "5 Steps to Map Out Your Services"' value={form.leadMagnetName} onChange={set("leadMagnetName")}/>
               <label className="field">What kind of freebie is it?</label>
