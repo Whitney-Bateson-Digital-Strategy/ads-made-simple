@@ -194,13 +194,13 @@ function App({ userEmail, onLogout }){
   /* Voice */
   const analyzeVoice=async(text)=>{if(!text||text.trim().length<50){setVE("We need at least a few sentences to get a feel for your voice. Paste a little more and try again!");return;}setVL(true);setVE(null);setVp(null);try{const d=await callEdge("analyze-voice",{writingSample:text});setVp(d.voice);}catch(e){setVE(friendlyError(e));}finally{setVL(false);}};
 
-  /* Generate creative hooks from form + variations */
+  /* Generate creative hooks from form + variations — second-person voice, punchy, under 8 words */
   const buildCreativeHooks=(f,vars)=>{
-    const offer=f.leadMagnetName||"your free guide";const outcome=f.desiredOutcome||f.whatItHelps||"get results";const pain=f.biggestPainPoint||"";
+    const offer=f.leadMagnetName||"Your Free Guide";const pain=f.biggestPainPoint||"";const outcome=f.desiredOutcome||f.whatItHelps||"";
     const hooks=[];
-    hooks.push(`FREE: ${offer}`);
-    if(pain){const short=pain.length>50?pain.slice(0,pain.lastIndexOf(" ",50))+"?":pain+"?";hooks.push(`Tired of ${short.charAt(0).toLowerCase()+short.slice(1)}`);}else{hooks.push(`Stop guessing. Start ${outcome.charAt(0).toLowerCase()+outcome.slice(1)}.`);}
-    const hl=vars[0]?.headline||"";if(hl.length>0&&hl.length<=60){hooks.push(hl);}else{hooks.push(`The ${f.leadMagnetType||"guide"} everyone's downloading`);}
+    hooks.push(`Get Your Free ${f.leadMagnetType==="PDF / Guide"?"Guide":f.leadMagnetType==="Checklist"?"Checklist":f.leadMagnetType==="Video Training"?"Training":f.leadMagnetType==="Quiz"?"Quiz":f.leadMagnetType==="Template"?"Template":f.leadMagnetType==="Workbook"?"Workbook":"Guide"}`);
+    if(pain){const words=pain.split(/\s+/).slice(0,5).join(" ");hooks.push(`Stop letting ${words.toLowerCase()}`);}else if(outcome){const words=outcome.split(/\s+/).slice(0,4).join(" ");hooks.push(`You deserve to ${words.toLowerCase()}`);}else{hooks.push("You deserve better results");}
+    hooks.push(`Your ${offer.split(/\s+/).length<=4?offer:"shortcut"} is waiting`);
     return hooks;
   };
 
@@ -241,6 +241,8 @@ function App({ userEmail, onLogout }){
       .hero h1{font-family:${F.h};font-size:clamp(30px,4.5vw,42px);font-weight:900;color:${C.teal};line-height:1.15;margin-bottom:20px}
       .hero h1 span{font-family:${F.a};color:${C.coral};font-weight:700;font-size:clamp(34px,5vw,48px)}
       .hero p{font-size:18px;color:${C.teal};opacity:.6;line-height:1.7;margin-bottom:14px;max-width:460px}
+      .hero-wave{max-width:960px;margin:0 auto;margin-top:-1px;line-height:0}
+      .hero-wave svg{width:100%;height:60px;display:block}
 
       /* INNER HERO (steps 2-4) */
       .inner-hero{background:linear-gradient(135deg,${C.ltBlue}22,${C.cream});padding:52px 32px 40px;text-align:center}
@@ -383,6 +385,7 @@ function App({ userEmail, onLogout }){
         <h1>Let's Create Your <span>Facebook Ad Copy</span></h1>
         <p>Answer a few quick questions and get 3 scroll-stopping ad variations{vp?", written in your voice":""}, scored and ready to launch.</p>
       </div></div>}
+      {step===0&&<div className="hero-wave"><svg viewBox="0 0 1440 60" preserveAspectRatio="none"><path d="M0,0 C360,50 1080,50 1440,0 L1440,60 L0,60 Z" fill={C.cream}/></svg></div>}
 
       {step>0&&step<5&&<div className="inner-hero">
         <div className="section-label">{STEPS[step]?.label}</div>
@@ -393,7 +396,7 @@ function App({ userEmail, onLogout }){
 
       {/* Step 0 */}
       {step===0&&<>
-        <div className="section" style={{background:C.cream}}>
+        <div className="section" style={{background:C.cream,paddingTop:"0"}}>
           <div className="section-inner">
             <div className="card">
               <label className="field">What's your lead magnet or freebie called? <span className="hint">(Or what are you thinking of calling it?)</span></label>
