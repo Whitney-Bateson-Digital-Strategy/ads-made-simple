@@ -194,94 +194,57 @@ function App({ userEmail, onLogout }){
   /* Voice */
   const analyzeVoice=async(text)=>{if(!text||text.trim().length<50){setVE("We need at least a few sentences to get a feel for your voice. Paste a little more and try again!");return;}setVL(true);setVE(null);setVp(null);try{const d=await callEdge("analyze-voice",{writingSample:text});setVp(d.voice);}catch(e){setVE(friendlyError(e));}finally{setVL(false);}};
 
-  /* Generate creative hooks — punchy, second-person, ≤10 words, pattern-interrupt style */
+  /* Generate creative hooks — short lines for ad images/graphics.
+     Strategy: use the offer name directly (users already write it concisely),
+     pair with lead magnet type, and use proven ad creative formulas.
+     No attempt to rephrase long-form pain/outcome text — that always breaks. */
   const buildCreativeHooks=(f)=>{
-    const pain=f.biggestPainPoint||"";
-    const outcome=f.desiredOutcome||f.whatItHelps||"";
     const offer=f.leadMagnetName||"";
-    const audience=f.audienceType||"";
-    const hook=f.hookFormula||"none";
+    const type=f.leadMagnetType||"";
+    const cta=f.callToAction==="Custom"?f.customCta:f.callToAction||"";
 
-    /* Smart phrase extraction: convert to second-person, rephrase negatives
-       for natural "Tired of X?" phrasing, trim at natural word boundaries. */
-    const extractPhrase=(s,maxWords=6)=>{
-      if(!s)return"";
-      let clean=s.replace(/[.!?,;:]+$/,"");
-      /* Convert third-person → second-person */
-      clean=clean.replace(/\b(their|his or her)\b/gi,"your")
-                  .replace(/\bthey\b/gi,"you")
-                  .replace(/\bthem\b/gi,"you");
-      /* Convert negative verbs → "not [verb]ing" for natural gerund phrasing */
-      clean=clean.replace(/\b(isn't|is not)\s+(\w+ing)\b/gi,"not $2")
-                  .replace(/\b(aren't|are not)\s+(\w+ing)\b/gi,"not $2")
-                  .replace(/\b(don't|do not)\s+(\w+)\b/gi,"not $2ing")
-                  .replace(/\b(can't|cannot)\s+(\w+)\b/gi,"not being able to $2")
-                  .replace(/\b(won't|will not)\s+(\w+)\b/gi,"not $2ing");
-      /* Strip leading filler ("I ", "We ", "It's ", "The ") but keep "your" */
-      clean=clean.replace(/^(i |we |it's |it |the )(?!your)/i,"");
-      const words=clean.split(/\s+/);
-      if(words.length<=maxWords)return clean;
-      const breakWords=["and","so","that","because","who","which","but","when","without"];
-      for(let i=Math.min(maxWords,words.length-1);i>=3;i--){
-        if(breakWords.includes(words[i].toLowerCase()))return words.slice(0,i).join(" ");
-      }
-      return words.slice(0,maxWords).join(" ");
-    };
+    /* Map lead magnet type to a casual label for templates */
+    const typeLabel={"PDF / Guide":"guide","Workbook":"workbook","Checklist":"checklist",
+      "Video Training":"free training","Quiz":"quiz","Template":"template","Other":"resource"}[type]||"guide";
 
-    const painShort=extractPhrase(pain);
-    const outcomeShort=extractPhrase(outcome);
-    const offerShort=extractPhrase(offer,5);
+    /* All candidate hooks — each one stands alone as ad-image text */
+    const pool=[];
 
-    /* Template pools organized by strategy */
-    const painHooks=painShort?[
-      `Tired of ${painShort.toLowerCase()}?`,
-      `${painShort.charAt(0).toUpperCase()+painShort.slice(1)}? Not anymore.`,
-      `What if ${painShort.toLowerCase()} wasn't your problem anymore?`,
-      `Stop letting ${painShort.toLowerCase()} hold you back.`,
-    ]:[];
+    if(offer){
+      pool.push(
+        `FREE ${typeLabel.toUpperCase()}: ${offer}`,
+        `Your free ${typeLabel} is ready.`,
+        `Grab your copy: ${offer}`,
+        `${offer} — yours free.`,
+      );
+    }
 
-    const outcomeHooks=outcomeShort?[
-      `Here's how to ${outcomeShort.toLowerCase()}.`,
-      `Imagine this: ${outcomeShort.toLowerCase()}.`,
-      `You deserve to ${outcomeShort.toLowerCase()}.`,
-      `Ready to finally ${outcomeShort.toLowerCase()}?`,
-    ]:[];
+    /* CTA-driven hooks */
+    if(cta){
+      pool.push(`${cta} — it's free!`);
+      if(offer)pool.push(`${cta}: ${offer}`);
+    }
 
-    const offerHooks=offerShort?[
-      `Free: ${offerShort}.`,
-      `Your shortcut to results: ${offerShort}.`,
-    ]:[];
+    /* Universal high-performing ad creative lines */
+    pool.push(
+      `Free ${typeLabel} inside 👇`,
+      "Wait — you need to see this.",
+      "Save this before you scroll.",
+      "This changed everything for me.",
+      "I wish I had this sooner.",
+      "You're going to want this.",
+      "Don't sleep on this one.",
+    );
 
-    const genericHooks=[
-      "You're one step away.",
-      "What if it didn't have to be this hard?",
-      "There's a better way. Here's proof.",
-      "Stop guessing. Start growing.",
-      "This changes everything.",
-    ];
-
-    /* Pick the best 3 hooks: one pain, one outcome, one wildcard */
-    const pick=(arr)=>arr.length?arr[Math.floor(Math.random()*arr.length)]:null;
+    /* Pick 3 unique hooks, prioritizing offer-specific ones first */
+    const pick=(arr,exclude)=>{const filtered=arr.filter(h=>!exclude.has(h));return filtered.length?filtered[Math.floor(Math.random()*filtered.length)]:null;};
+    const used=new Set();
     const hooks=[];
-
-    /* Hook 1: Lead with pain if available */
-    const h1=pick(painHooks)||pick(outcomeHooks)||pick(genericHooks);
-    hooks.push(h1);
-
-    /* Hook 2: Lead with outcome, avoiding duplicate */
-    let h2=pick(outcomeHooks);
-    if(!h2||h2===h1)h2=pick(offerHooks);
-    if(!h2||h2===h1)h2=pick(genericHooks.filter(g=>g!==h1));
-    hooks.push(h2||"You're closer than you think.");
-
-    /* Hook 3: Wildcard — offer-based or generic, avoiding duplicates */
-    const used=new Set(hooks);
-    let h3=pick(offerHooks.filter(h=>!used.has(h)));
-    if(!h3)h3=pick(genericHooks.filter(h=>!used.has(h)));
-    if(!h3)h3=pick(painHooks.filter(h=>!used.has(h)));
-    hooks.push(h3||"This changes everything.");
-
-    return hooks;
+    for(let i=0;i<3;i++){
+      const h=pick(pool,used);
+      if(h){hooks.push(h);used.add(h);}
+    }
+    return hooks.length===3?hooks:[`Free ${typeLabel} inside 👇`,"Save this before you scroll.","You're going to want this."];
   };
 
   /* Generate — when done, go to dashboard */
