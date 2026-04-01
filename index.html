@@ -196,22 +196,80 @@ function App({ userEmail, onLogout }){
 
   /* Generate creative hooks — punchy, second-person, ≤10 words, pattern-interrupt style */
   const buildCreativeHooks=(f)=>{
-    const pain=f.biggestPainPoint||"";const outcome=f.desiredOutcome||f.whatItHelps||"";
-    const cap=s=>s.charAt(0).toUpperCase()+s.slice(1);
-    /* Extract short phrases (≤6 words) from user input */
-    const shorten=(s,max)=>s.split(/\s+/).slice(0,max).join(" ").replace(/[.!?,;:]+$/,"");
+    const pain=f.biggestPainPoint||"";
+    const outcome=f.desiredOutcome||f.whatItHelps||"";
+    const offer=f.leadMagnetName||"";
+    const audience=f.audienceType||"";
+    const hook=f.hookFormula||"none";
+
+    /* Smart phrase extraction: find the core noun-phrase or verb-phrase,
+       trim to a natural break (comma, "and", "so", "that", "because", "who"),
+       and cap at maxWords. Falls back to first N words if no break found. */
+    const extractPhrase=(s,maxWords=6)=>{
+      if(!s)return"";
+      const clean=s.replace(/^(my |their |our |the |i |they |we |it's |it )/i,"").replace(/[.!?,;:]+$/,"");
+      const words=clean.split(/\s+/);
+      if(words.length<=maxWords)return clean;
+      const breakWords=["and","so","that","because","who","which","but","when","without"];
+      for(let i=Math.min(maxWords,words.length-1);i>=3;i--){
+        if(breakWords.includes(words[i].toLowerCase()))return words.slice(0,i).join(" ");
+      }
+      return words.slice(0,maxWords).join(" ");
+    };
+
+    const painShort=extractPhrase(pain);
+    const outcomeShort=extractPhrase(outcome);
+    const offerShort=extractPhrase(offer,5);
+
+    /* Template pools organized by strategy */
+    const painHooks=painShort?[
+      `Tired of ${painShort.toLowerCase()}?`,
+      `${painShort.charAt(0).toUpperCase()+painShort.slice(1)}? Not anymore.`,
+      `What if ${painShort.toLowerCase()} wasn't your problem anymore?`,
+      `Stop letting ${painShort.toLowerCase()} hold you back.`,
+    ]:[];
+
+    const outcomeHooks=outcomeShort?[
+      `Here's how to ${outcomeShort.toLowerCase()}.`,
+      `Imagine this: ${outcomeShort.toLowerCase()}.`,
+      `You deserve to ${outcomeShort.toLowerCase()}.`,
+      `Ready to finally ${outcomeShort.toLowerCase()}?`,
+    ]:[];
+
+    const offerHooks=offerShort?[
+      `Free: ${offerShort}.`,
+      `Your shortcut to results: ${offerShort}.`,
+    ]:[];
+
+    const genericHooks=[
+      "You're one step away.",
+      "What if it didn't have to be this hard?",
+      "There's a better way. Here's proof.",
+      "Stop guessing. Start growing.",
+      "This changes everything.",
+    ];
+
+    /* Pick the best 3 hooks: one pain, one outcome, one wildcard */
+    const pick=(arr)=>arr.length?arr[Math.floor(Math.random()*arr.length)]:null;
     const hooks=[];
-    /* Hook 1: Pain-point call-out as bold statement */
-    if(pain){const short=shorten(pain,6);hooks.push(`Your ${short.toLowerCase()} is fixable.`);}
-    else{hooks.push("You're closer than you think.");}
-    /* Hook 2: Pointed question about pain or current state */
-    if(pain){const q=shorten(pain,5);hooks.push(`Still struggling with ${q.toLowerCase()}?`);}
-    else if(outcome){const q=shorten(outcome,5);hooks.push(`Ready to ${q.toLowerCase()}?`);}
-    else{hooks.push("What if it didn't have to be this hard?");}
-    /* Hook 3: Outcome-driven pattern interrupt */
-    if(outcome){const o=shorten(outcome,5);hooks.push(`${cap(o)} starts here.`);}
-    else if(pain){hooks.push("There's a better way. Here's proof.");}
-    else{hooks.push("Stop guessing. Start growing.");}
+
+    /* Hook 1: Lead with pain if available */
+    const h1=pick(painHooks)||pick(outcomeHooks)||pick(genericHooks);
+    hooks.push(h1);
+
+    /* Hook 2: Lead with outcome, avoiding duplicate */
+    let h2=pick(outcomeHooks);
+    if(!h2||h2===h1)h2=pick(offerHooks);
+    if(!h2||h2===h1)h2=pick(genericHooks.filter(g=>g!==h1));
+    hooks.push(h2||"You're closer than you think.");
+
+    /* Hook 3: Wildcard — offer-based or generic, avoiding duplicates */
+    const used=new Set(hooks);
+    let h3=pick(offerHooks.filter(h=>!used.has(h)));
+    if(!h3)h3=pick(genericHooks.filter(h=>!used.has(h)));
+    if(!h3)h3=pick(painHooks.filter(h=>!used.has(h)));
+    hooks.push(h3||"This changes everything.");
+
     return hooks;
   };
 
