@@ -202,12 +202,23 @@ function App({ userEmail, onLogout }){
     const audience=f.audienceType||"";
     const hook=f.hookFormula||"none";
 
-    /* Smart phrase extraction: find the core noun-phrase or verb-phrase,
-       trim to a natural break (comma, "and", "so", "that", "because", "who"),
-       and cap at maxWords. Falls back to first N words if no break found. */
+    /* Smart phrase extraction: convert to second-person, rephrase negatives
+       for natural "Tired of X?" phrasing, trim at natural word boundaries. */
     const extractPhrase=(s,maxWords=6)=>{
       if(!s)return"";
-      const clean=s.replace(/^(my |their |our |the |i |they |we |it's |it )/i,"").replace(/[.!?,;:]+$/,"");
+      let clean=s.replace(/[.!?,;:]+$/,"");
+      /* Convert third-person → second-person */
+      clean=clean.replace(/\b(their|his or her)\b/gi,"your")
+                  .replace(/\bthey\b/gi,"you")
+                  .replace(/\bthem\b/gi,"you");
+      /* Convert negative verbs → "not [verb]ing" for natural gerund phrasing */
+      clean=clean.replace(/\b(isn't|is not)\s+(\w+ing)\b/gi,"not $2")
+                  .replace(/\b(aren't|are not)\s+(\w+ing)\b/gi,"not $2")
+                  .replace(/\b(don't|do not)\s+(\w+)\b/gi,"not $2ing")
+                  .replace(/\b(can't|cannot)\s+(\w+)\b/gi,"not being able to $2")
+                  .replace(/\b(won't|will not)\s+(\w+)\b/gi,"not $2ing");
+      /* Strip leading filler ("I ", "We ", "It's ", "The ") but keep "your" */
+      clean=clean.replace(/^(i |we |it's |it |the )(?!your)/i,"");
       const words=clean.split(/\s+/);
       if(words.length<=maxWords)return clean;
       const breakWords=["and","so","that","because","who","which","but","when","without"];
