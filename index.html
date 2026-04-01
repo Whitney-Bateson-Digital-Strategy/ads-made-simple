@@ -142,7 +142,7 @@ function CreativeHookBlock({index,text}){
 
 /* ═══ MAIN ═══ */
 function App({ userEmail, onLogout }){
-  const[view,setView]=useState("loading");const[step,setStep]=useState(0);const[form,setForm]=useState(INIT);const[loading,setLoading]=useState(false);const[results,setResults]=useState(null);const[activeTab,setActiveTab]=useState(0);const[error,setError]=useState(null);const[vp,setVp]=useState(null);const[vL,setVL]=useState(false);const[vE,setVE]=useState(null);const[showScores,setShowScores]=useState(false);const[loadingSec,setLoadingSec]=useState(0);const[dataLoaded,setDataLoaded]=useState(false);const loadingTimer=useRef(null);const topRef=useRef(null);
+  const[view,setView]=useState("loading");const[step,setStep]=useState(0);const[form,setForm]=useState(INIT);const[loading,setLoading]=useState(false);const[results,setResults]=useState(null);const[activeTab,setActiveTab]=useState(0);const[error,setError]=useState(null);const[vp,setVp]=useState(null);const[vL,setVL]=useState(false);const[vE,setVE]=useState(null);const[showScores,setShowScores]=useState(false);const[refreshingHooks,setRefreshingHooks]=useState(false);const[loadingSec,setLoadingSec]=useState(0);const[dataLoaded,setDataLoaded]=useState(false);const loadingTimer=useRef(null);const topRef=useRef(null);
 
   /* Load saved voice + session on mount */
   useEffect(()=>{if(!userEmail)return;(async()=>{
@@ -245,6 +245,22 @@ function App({ userEmail, onLogout }){
       if(h){hooks.push(h);used.add(h);}
     }
     return hooks.length===3?hooks:[`Free ${typeLabel} inside 👇`,"Save this before you scroll.","You're going to want this."];
+  };
+
+  /* Refresh just the creative hooks without regenerating the full ad set */
+  const refreshHooks=async()=>{
+    if(!results)return;
+    setRefreshingHooks(true);
+    try{
+      const d=await callEdge("generate-ads",{form,voiceProfile:vp,mode:"generate_hooks"});
+      if(d.results?.creativeHooks&&d.results.creativeHooks.length>0){
+        setResults({...results,creativeHooks:d.results.creativeHooks});
+        setRefreshingHooks(false);return;
+      }
+    }catch(e){console.log("Hook refresh via API failed, using fallback",e);}
+    /* Fallback: regenerate client-side (randomized, so you get different picks) */
+    setResults({...results,creativeHooks:buildCreativeHooks(form)});
+    setRefreshingHooks(false);
   };
 
   /* Generate — when done, go to dashboard */
@@ -413,7 +429,7 @@ function App({ userEmail, onLogout }){
           {showScores&&<div className="score-detail"><ScoreBar label="Hook Strength" score={s.hookStrength}/><ScoreBar label="Clarity" score={s.clarity}/><ScoreBar label="Emotional Pull" score={s.emotionalPull}/><ScoreBar label="CTA Effectiveness" score={s.ctaEffectiveness}/><div style={{marginTop:"14px",background:C.limeSoft,borderRadius:"12px",padding:"16px 18px",fontSize:"15px",lineHeight:1.6}}>💡 <strong>How to make it even better:</strong> {s.topTip}</div></div>}</>}
         </div>})()}
         {results.creativeHooks&&results.creativeHooks.length>0&&<div className="card" style={{marginTop:"8px"}}>
-          <div style={{fontFamily:F.h,fontSize:"17px",fontWeight:700,color:C.teal,marginBottom:"6px"}}>Text for Your Ad Creative</div>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"6px"}}><div style={{fontFamily:F.h,fontSize:"17px",fontWeight:700,color:C.teal}}>Text for Your Ad Creative</div><button onClick={refreshHooks} disabled={refreshingHooks} style={{background:"transparent",border:`1.5px solid ${C.tealMid}`,color:C.teal,padding:"6px 14px",borderRadius:"8px",fontSize:"13px",fontWeight:700,cursor:refreshingHooks?"wait":"pointer",fontFamily:F.b,opacity:refreshingHooks?.5:1,transition:"all .2s"}}>{refreshingHooks?"Refreshing...":"🔄 Refresh Hooks"}</button></div>
           <p style={{fontSize:"14px",color:C.teal,opacity:.55,lineHeight:1.5,marginBottom:"18px"}}>Short, punchy lines to put directly on your ad image or graphic. Copy one and drop it on your creative!</p>
           {results.creativeHooks.map((hook,i)=><CreativeHookBlock key={i} index={i} text={hook}/>)}
         </div>}
